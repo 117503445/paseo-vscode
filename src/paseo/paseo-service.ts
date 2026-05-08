@@ -24,11 +24,13 @@ interface PaseoServiceConfig {
   workspacePath: string | null;
   extensionVersion: string;
   configuredHost: () => string;
+  daemonPassword: () => string;
   startTimeoutMs: () => number;
   defaultProvider: () => string;
   defaultModel: () => string;
   defaultMode: () => string;
   onStateChange: (state: PaseoViewState) => void;
+  log: (message: string) => void;
 }
 
 const EMPTY_STATE: PaseoViewState = {
@@ -80,6 +82,7 @@ export class PaseoService {
         status: config.workspacePath ? "idle" : "no-workspace",
       },
     };
+    this.log(`扩展初始化，workspace=${config.workspacePath ?? "未打开文件夹"}`);
   }
 
   /**
@@ -94,6 +97,7 @@ export class PaseoService {
    */
   async start(): Promise<void> {
     if (!this.config.workspacePath) {
+      this.log("未打开文件夹，跳过 daemon 连接");
       this.patchState({
         daemon: {
           status: "no-workspace",
@@ -113,6 +117,7 @@ export class PaseoService {
    * 主动重连 daemon。
    */
   async reconnect(): Promise<void> {
+    this.log("用户请求重连 daemon");
     await this.closeClient();
     await this.start();
   }
@@ -122,6 +127,7 @@ export class PaseoService {
    */
   async refreshAll(): Promise<void> {
     if (!this.client || !this.config.workspacePath) return;
+    this.log("刷新 provider、agent 和 timeline");
     await Promise.all([this.refreshProviders(), this.refreshAgents()]);
     if (this.state.selectedAgentId) {
       await this.selectAgent(this.state.selectedAgentId);
@@ -217,6 +223,7 @@ export class PaseoService {
    * 释放 WebSocket client。
    */
   async dispose(): Promise<void> {
+    this.log("释放 daemon client，保留 daemon 后台进程");
     await this.closeClient();
   }
 
@@ -235,6 +242,7 @@ export class PaseoService {
       },
       error: null,
     });
+    this.log("开始连接已有 Paseo daemon");
 
     const existing = await this.tryConnectExisting();
     if (existing || generation !== this.connectGeneration) return;
@@ -248,7 +256,9 @@ export class PaseoService {
       },
     });
     try {
+      this.log("未找到可连接 daemon，准备离线启动内置 daemon");
       const startResult = await startDaemonDetached({});
+      this.log(`内置 daemon 已启动，pid=${startResult.pid ?? "unknown"}，log=${startResult.logPath}`);
       this.patchState({
         daemon: {
           status: "starting",
@@ -281,9 +291,12 @@ export class PaseoService {
     });
     for (const host of hosts) {
       try {
+        this.log(`尝试连接 daemon：${maskHostForLog(host)}`);
         await this.connectHost(host);
+        this.log(`daemon 连接成功：${maskHostForLog(host)}`);
         return true;
-      } catch {
+      } catch (error) {
+        this.log(`daemon 连接失败：${maskHostForLog(host)}，原因：${errorToMessage(error)}`);
         // 继续尝试下一个连接目标。
       }
     }
@@ -319,12 +332,16 @@ export class PaseoService {
    */
   private async connectTarget(target: ConnectionTarget): Promise<void> {
     const serverModule = await loadPaseoServerModule();
+    const password = target.password ?? this.resolveDaemonPassword();
+    if (password) {
+      this.log(`daemon 连接将携带密码：${target.password ? "来自 host 参数" : "来自配置或环境变量"}`);
+    }
     const client = new serverModule.DaemonClient({
       url: target.url,
       clientId: `paseo-vscode-${randomUUID()}`,
       clientType: "browser",
       appVersion: resolveClientAppVersion(this.config.extensionVersion),
-      password: target.password,
+      password,
       connectTimeoutMs: 5000,
       reconnect: { enabled: true, baseDelayMs: 1000, maxDelayMs: 5000 },
       webSocketFactory: (url, options) => createWebSocket(url, options, target),
@@ -352,6 +369,7 @@ export class PaseoService {
     try {
       const snapshot = await this.client.getProvidersSnapshot({ cwd: this.config.workspacePath });
       this.patchState({ providers: snapshot.entries.map(mapProvider) });
+      this.log(`provider 快照刷新完成：${snapshot.entries.map((entry) => `${entry.provider}:${entry.status}`).join(", ")}`);
     } catch (error) {
       this.patchState({ error: errorToMessage(error) });
     }
@@ -376,6 +394,7 @@ export class PaseoService {
           ? this.state.selectedAgentId
           : (agents[0]?.id ?? null);
       this.patchState({ agents, selectedAgentId });
+      this.log(`agent 列表刷新完成，当前文件夹 agent 数量=${agents.length}`);
       if (selectedAgentId && selectedAgentId !== this.state.selectedAgentId) {
         await this.selectAgent(selectedAgentId);
       }
@@ -424,6 +443,13 @@ export class PaseoService {
   }
 
   /**
+   * 解析 daemon 明文密码。
+   */
+  private resolveDaemonPassword(): string | undefined {
+    return this.config.daemonPassword().trim() || process.env.PASEO_PASSWORD?.trim() || undefined;
+  }
+
+  /**
    * 更新视图状态。
    * @param patch 局部状态补丁。
    */
@@ -460,6 +486,14 @@ export class PaseoService {
   private resolveDefaultMode(provider: string): string | undefined {
     const entry = this.state.providers.find((candidate) => candidate.provider === provider);
     return entry?.defaultModeId ?? entry?.modes.find((mode) => mode.isDefault)?.id;
+  }
+
+  /**
+   * 写入扩展日志。
+   * @param message 日志消息。
+   */
+  private log(message: string): void {
+    this.config.log(message);
   }
 }
 
@@ -690,4 +724,13 @@ function readString(value: unknown): string {
  */
 function errorToMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * 隐藏 host 中的 password 查询参数。
+ * @param host daemon host。
+ */
+function maskHostForLog(host: string): string {
+  if (!host.includes("password=")) return host;
+  return host.replace(/([?&]password=)[^&]+/g, "$1***");
 }

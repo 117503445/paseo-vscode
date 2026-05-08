@@ -26,7 +26,8 @@
     "onCommand:paseo.newAgent",
     "onCommand:paseo.refresh",
     "onCommand:paseo.reconnectDaemon",
-    "onCommand:paseo.showDaemonStatus"
+    "onCommand:paseo.showDaemonStatus",
+    "onCommand:paseo.openLogs"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -64,6 +65,10 @@
       {
         "command": "paseo.showDaemonStatus",
         "title": "Paseo: Show Daemon Status"
+      },
+      {
+        "command": "paseo.openLogs",
+        "title": "Paseo: Open Logs"
       }
     ],
     "configuration": {
@@ -73,6 +78,11 @@
           "type": "string",
           "default": "",
           "description": "Paseo daemon 连接目标。为空时按 PASEO_HOST、PASEO_HOME/paseo.pid、配置文件和 localhost:6767 推导。"
+        },
+        "paseo.daemon.password": {
+          "type": "string",
+          "default": "",
+          "description": "Paseo daemon 明文连接密码。为空时读取 PASEO_PASSWORD，或从 paseo.daemon.host 的 tcp://...?password=... 参数读取。"
         },
         "paseo.daemon.startTimeoutMs": {
           "type": "number",

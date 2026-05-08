@@ -11,6 +11,7 @@ services:
       PASEO_DICTATION_ENABLED: "0"
       PASEO_VOICE_MODE_ENABLED: "0"
       PASEO_LOCAL_SPEECH_AUTO_DOWNLOAD: "0"
+      PASEO_PASSWORD: paseo-e2e-daemon
       PASEO_LISTEN: 127.0.0.1:6767
     entrypoint:
       - /usr/bin/entrypoint.sh
@@ -35,6 +36,7 @@ services:
       PASEO_DICTATION_ENABLED: "0"
       PASEO_VOICE_MODE_ENABLED: "0"
       PASEO_LOCAL_SPEECH_AUTO_DOWNLOAD: "0"
+      PASEO_PASSWORD: paseo-e2e-daemon
       PASEO_LISTEN: 127.0.0.1:6767
     entrypoint:
       - /usr/bin/entrypoint.sh
