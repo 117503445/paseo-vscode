@@ -12,6 +12,14 @@ tasks:
     cmds:
       - npm run compile
 
+  install:
+    desc: "编译并安装到宿主机 code-server 和 vscode-server"
+    deps:
+      - build
+    cmds:
+      - npm exec -- vsce package --out dist/paseo-vscode.vsix
+      - go run ./scripts/go-scripts install-extension {{.CLI_ARGS}} dist/paseo-vscode.vsix
+
   test:
     desc: "运行所有测试"
     cmds:

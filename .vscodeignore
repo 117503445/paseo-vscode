@@ -11,3 +11,4 @@ tsconfig.json
 go.mod
 go.sum
 Taskfile.yml
+*.vsix
