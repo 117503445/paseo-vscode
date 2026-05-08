@@ -22,7 +22,7 @@ type Config struct {
 	ProjectRoot  string
 }
 
-var allCases = []string{"offline-daemon-start", "mock-chat", "reload-reconnect", "no-folder"}
+var allCases = []string{"offline-daemon-start", "codex-like-ux", "mock-chat", "reload-reconnect", "no-folder"}
 
 // Run 执行 E2E 命令。
 // args 是 e2e 子命令参数。
@@ -125,7 +125,7 @@ func runAllOrchestrator(ctx context.Context, cfg Config, composeFile string) err
 	if err := runCommand(ctx, cfg.ProjectRoot, "docker", "compose", "-f", composeFile, "up", "-d", "code-server"); err != nil {
 		return err
 	}
-	for _, name := range []string{"offline-daemon-start", "mock-chat", "reload-reconnect"} {
+	for _, name := range []string{"offline-daemon-start", "codex-like-ux", "mock-chat", "reload-reconnect"} {
 		extraEnv := []string{}
 		if name == "reload-reconnect" {
 			extraEnv = append(extraEnv, "PASEO_E2E_EXPECT_RELOAD_AGENT=1")
@@ -269,6 +269,15 @@ func runCase(ctx context.Context, page playwright.Page, baseURL string, name str
 			return err
 		}
 		return createMockChat(frame)
+	case "codex-like-ux":
+		frame, err := openPaseoView(page)
+		if err != nil {
+			return err
+		}
+		if err := expectText(frame.Locator(`[data-testid="paseo-daemon-status"]`), "已连接", 60*time.Second); err != nil {
+			return err
+		}
+		return expectCodexLikeUX(frame)
 	case "reload-reconnect":
 		if _, err := page.Goto(baseURL); err != nil {
 			return err
@@ -298,7 +307,7 @@ func runCase(ctx context.Context, page playwright.Page, baseURL string, name str
 // expectReloadedAgent 断言刷新后能读取已有 agent 和 timeline。
 // frame 是 Paseo webview frame。
 func expectReloadedAgent(frame playwright.Frame) error {
-	agent := frame.Locator(`[data-testid="paseo-agent"]`).First()
+	agent := frame.Locator(`[data-testid="paseo-task-item"]`).First()
 	if err := agent.WaitFor(playwright.LocatorWaitForOptions{
 		Timeout: playwright.Float(60_000),
 	}); err != nil {
@@ -307,10 +316,10 @@ func expectReloadedAgent(frame playwright.Frame) error {
 	if err := agent.Click(); err != nil {
 		return err
 	}
-	if err := waitLocatorCountAtLeast(frame.Locator(`[data-testid="paseo-timeline-user"]`), 1, 30*time.Second); err != nil {
+	if err := waitLocatorCountAtLeast(frame.Locator(`[data-testid="paseo-message-user"]`), 1, 30*time.Second); err != nil {
 		return err
 	}
-	return waitLocatorCountAtLeast(frame.Locator(`[data-testid="paseo-timeline-assistant"]`), 1, 30*time.Second)
+	return waitLocatorCountAtLeast(frame.Locator(`[data-testid="paseo-message-assistant"]`), 1, 30*time.Second)
 }
 
 // loginCodeServer 登录 code-server。
@@ -463,43 +472,115 @@ func dumpFrames(page playwright.Page) string {
 // createMockChat 创建 mock agent 并断言 timeline。
 // frame 是 Paseo webview frame。
 func createMockChat(frame playwright.Frame) error {
-	provider := frame.Locator(`[data-testid="paseo-provider-select"]`)
-	if _, err := provider.SelectOption(playwright.SelectOptionValues{Values: &[]string{"mock"}}); err != nil {
+	if err := selectOptionWhenAvailable(frame.Locator(`[data-testid="paseo-composer-provider"]`), "mock", 30*time.Second); err != nil {
 		return err
 	}
-	if err := selectOptionWhenAvailable(frame.Locator(`[data-testid="paseo-model-select"]`), "ten-second-stream", 30*time.Second); err != nil {
+	if err := selectOptionWhenAvailable(frame.Locator(`[data-testid="paseo-composer-model"]`), "ten-second-stream", 30*time.Second); err != nil {
 		return err
 	}
-	if err := selectOptionWhenAvailable(frame.Locator(`[data-testid="paseo-mode-select"]`), "load-test", 30*time.Second); err != nil {
+	if err := selectOptionWhenAvailable(frame.Locator(`[data-testid="paseo-composer-mode"]`), "load-test", 30*time.Second); err != nil {
 		return err
 	}
-	if err := frame.Locator(`[data-testid="paseo-new-agent-prompt"]`).Fill("请输出一段测试消息"); err != nil {
+	if err := frame.Locator(`[data-testid="paseo-composer-input"]`).Fill("请输出一段测试消息"); err != nil {
 		return err
 	}
-	if err := frame.Locator(`[data-testid="paseo-create-agent"]`).Click(); err != nil {
+	if err := frame.Locator(`[data-testid="paseo-composer-send"]`).Click(); err != nil {
 		return err
 	}
-	if err := frame.Locator(`[data-testid="paseo-agent"]`).First().WaitFor(playwright.LocatorWaitForOptions{
+	if err := frame.Locator(`[data-testid="paseo-thread-view"]`).WaitFor(playwright.LocatorWaitForOptions{
 		Timeout: playwright.Float(60_000),
 	}); err != nil {
 		return err
 	}
-	if err := frame.Locator(`[data-testid="paseo-timeline-assistant"]`).First().WaitFor(playwright.LocatorWaitForOptions{
+	if err := frame.Locator(`[data-testid="paseo-message-assistant"]`).First().WaitFor(playwright.LocatorWaitForOptions{
 		Timeout: playwright.Float(60_000),
 	}); err != nil {
 		return err
 	}
-	sendButton := frame.Locator(`[data-testid="paseo-send-message"]`)
-	if err := waitLocatorEnabled(sendButton, 60*time.Second); err != nil {
+	sendButton := frame.Locator(`[data-testid="paseo-composer-send"]`)
+	if err := sendButton.WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(60_000),
+	}); err != nil {
 		return err
 	}
-	if err := frame.Locator(`[data-testid="paseo-message-input"]`).Fill("第二条测试消息"); err != nil {
+	if err := frame.Locator(`[data-testid="paseo-composer-input"]`).Fill("第二条测试消息"); err != nil {
+		return err
+	}
+	if err := waitLocatorEnabled(sendButton, 10*time.Second); err != nil {
 		return err
 	}
 	if err := sendButton.Click(); err != nil {
 		return err
 	}
-	return waitLocatorCountAtLeast(frame.Locator(`[data-testid="paseo-timeline-user"]`), 2, 30*time.Second)
+	return waitLocatorCountAtLeast(frame.Locator(`[data-testid="paseo-message-user"]`), 2, 30*time.Second)
+}
+
+// expectCodexLikeUX 断言 Paseo 具备 Codex 风格任务交互。
+// frame 是 Paseo webview frame。
+func expectCodexLikeUX(frame playwright.Frame) error {
+	if err := frame.Locator(`[data-testid="paseo-task-view"]`).WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(30_000),
+	}); err != nil {
+		return err
+	}
+	if err := expectText(frame.Locator(`[data-testid="paseo-running-count"]`), "0 正在进行中", 30*time.Second); err != nil {
+		return err
+	}
+	if err := selectOptionWhenAvailable(frame.Locator(`[data-testid="paseo-composer-provider"]`), "mock", 30*time.Second); err != nil {
+		return err
+	}
+	if err := selectOptionWhenAvailable(frame.Locator(`[data-testid="paseo-composer-model"]`), "ten-second-stream", 30*time.Second); err != nil {
+		return err
+	}
+	if err := selectOptionWhenAvailable(frame.Locator(`[data-testid="paseo-composer-mode"]`), "load-test", 30*time.Second); err != nil {
+		return err
+	}
+	if err := frame.Locator(`[data-testid="paseo-composer-menu"]`).Click(); err != nil {
+		return err
+	}
+	if err := frame.Locator(`[data-testid="paseo-toggle-ide-context"]`).WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(10_000),
+	}); err != nil {
+		return err
+	}
+	if err := frame.Locator(`[data-testid="paseo-composer-input"]`).Click(); err != nil {
+		return err
+	}
+	if err := frame.Locator(`[data-testid="paseo-composer-input"]`).Fill("请输出一段测试消息"); err != nil {
+		return err
+	}
+	if err := frame.Locator(`[data-testid="paseo-composer-send"]`).Click(); err != nil {
+		return err
+	}
+	if err := frame.Locator(`[data-testid="paseo-thread-view"]`).WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(60_000),
+	}); err != nil {
+		return err
+	}
+	if err := waitLocatorCountAtLeast(frame.Locator(`[data-testid="paseo-processing-group"]`), 1, 30*time.Second); err != nil {
+		return err
+	}
+	if err := frame.Locator(`[data-testid="paseo-composer-stop"]`).WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(30_000),
+	}); err != nil {
+		return err
+	}
+	if err := frame.Locator(`[data-testid="paseo-message-assistant"]`).First().WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(60_000),
+	}); err != nil {
+		return err
+	}
+	if err := frame.Locator(`[data-testid="paseo-back-to-tasks"]`).Click(); err != nil {
+		return err
+	}
+	if err := frame.Locator(`[data-testid="paseo-task-item"]`).First().WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(30_000),
+	}); err != nil {
+		return err
+	}
+	return frame.Locator(`[data-testid="paseo-archive-agent"]`).First().WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(30_000),
+	})
 }
 
 // selectOptionWhenAvailable 等待目标 option 可用并选择。

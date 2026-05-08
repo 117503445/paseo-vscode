@@ -13,10 +13,12 @@ import { startDaemonDetached } from "./daemon-manager";
 import { loadPaseoServerModule } from "./server-module";
 import type {
   AgentView,
-  CreateAgentInput,
+  ComposerDefaultsView,
+  ComposerInput,
   PaseoViewState,
   ProviderView,
-  SendMessageInput,
+  SettingsSummaryView,
+  TaskFilter,
   TimelineItemView,
 } from "./types";
 
@@ -29,12 +31,77 @@ interface PaseoServiceConfig {
   defaultProvider: () => string;
   defaultModel: () => string;
   defaultMode: () => string;
+  ideContext: () => string | null;
   onStateChange: (state: PaseoViewState) => void;
   log: (message: string) => void;
 }
 
+interface AgentClientLike {
+  /**
+   * 创建 agent。
+   * @param input 创建参数。
+   */
+  createAgent(input: Record<string, unknown>): Promise<unknown>;
+  /**
+   * 发送 agent 消息。
+   * @param agentId agent ID。
+   * @param text 消息文本。
+   * @param options 附加参数。
+   */
+  sendAgentMessage(agentId: string, text: string, options?: Record<string, unknown>): Promise<void>;
+  /**
+   * 归档 agent。
+   * @param agentId agent ID。
+   */
+  archiveAgent(agentId: string): Promise<{ archivedAt?: string }>;
+  /**
+   * 停止 agent。
+   * @param agentId agent ID。
+   */
+  cancelAgent(agentId: string): Promise<void>;
+  /**
+   * 设置 agent 模型。
+   * @param agentId agent ID。
+   * @param modelId 模型 ID。
+   */
+  setAgentModel(agentId: string, modelId: string): Promise<unknown>;
+  /**
+   * 设置 agent 模式。
+   * @param agentId agent ID。
+   * @param modeId 模式 ID。
+   */
+  setAgentMode(agentId: string, modeId: string): Promise<unknown>;
+}
+
+interface AgentSnapshotLike {
+  /** agent ID。 */
+  id: string;
+  /** 标题。 */
+  title?: string | null;
+  /** provider ID。 */
+  provider: string;
+  /** 工作目录。 */
+  cwd: string;
+  /** 生命周期状态。 */
+  status: string;
+  /** 模型 ID。 */
+  model?: string | null;
+  /** 当前模式 ID。 */
+  currentModeId?: string | null;
+  /** 更新时间。 */
+  updatedAt: string;
+  /** 归档时间。 */
+  archivedAt?: string | null;
+  /** 最近错误。 */
+  lastError?: string | null;
+}
+
 const EMPTY_STATE: PaseoViewState = {
   workspacePath: null,
+  screen: "tasks",
+  taskFilter: "all",
+  searchQuery: "",
+  runningCount: 0,
   daemon: {
     status: "idle",
     host: null,
@@ -44,7 +111,20 @@ const EMPTY_STATE: PaseoViewState = {
   agents: [],
   providers: [],
   selectedAgentId: null,
+  selectedAgent: null,
   timeline: [],
+  composerDefaults: {
+    provider: "",
+    model: "",
+    modeId: "",
+  },
+  settingsSummary: {
+    daemonHost: null,
+    daemonLogPath: null,
+    defaultProvider: "",
+    defaultModel: "",
+    defaultMode: "",
+  },
   busy: false,
   error: null,
 };
@@ -74,14 +154,14 @@ export class PaseoService {
    */
   constructor(config: PaseoServiceConfig) {
     this.config = config;
-    this.state = {
+    this.state = this.withDerivedState({
       ...EMPTY_STATE,
       workspacePath: config.workspacePath,
       daemon: {
         ...EMPTY_STATE.daemon,
         status: config.workspacePath ? "idle" : "no-workspace",
       },
-    };
+    });
     this.log(`扩展初始化，workspace=${config.workspacePath ?? "未打开文件夹"}`);
   }
 
@@ -135,30 +215,73 @@ export class PaseoService {
   }
 
   /**
-   * 创建当前文件夹的新 agent。
-   * @param input 新建 agent 表单输入。
+   * 设置任务列表过滤模式。
+   * @param filter 任务过滤模式。
    */
-  async createAgent(input: CreateAgentInput): Promise<void> {
+  setTaskFilter(filter: TaskFilter): void {
+    this.patchState({ taskFilter: filter });
+  }
+
+  /**
+   * 设置任务搜索关键字。
+   * @param query 搜索关键字。
+   */
+  setSearchQuery(query: string): void {
+    this.patchState({ searchQuery: query });
+  }
+
+  /**
+   * 返回任务列表。
+   */
+  backToTasks(): void {
+    this.patchState({ screen: "tasks", selectedAgentId: null, timeline: [], error: null });
+  }
+
+  /**
+   * 从 composer 发送消息或创建新任务。
+   * @param input composer 输入。
+   */
+  async sendComposer(input: ComposerInput): Promise<void> {
+    const text = input.text.trim();
+    if (!text) return;
+    if (this.state.screen === "thread" && this.state.selectedAgentId) {
+      await this.sendMessage(this.state.selectedAgentId, input);
+      return;
+    }
+    await this.createAgent(input);
+  }
+
+  /**
+   * 创建当前文件夹的新 agent。
+   * @param input composer 输入。
+   */
+  async createAgent(input: ComposerInput): Promise<void> {
     if (!this.client || !this.config.workspacePath) return;
+    const text = input.text.trim();
+    if (!text) return;
     const provider = input.provider || this.config.defaultProvider() || this.resolveFallbackProvider();
     const model = input.model || this.config.defaultModel() || this.resolveDefaultModel(provider);
-    const modeId = input.modeId || this.config.defaultMode() || this.resolveDefaultMode(provider);
+    const nativePlanModeId = input.planMode === true ? this.resolveNativePlanMode(provider) : undefined;
+    const modeId =
+      nativePlanModeId || input.modeId || this.config.defaultMode() || this.resolveDefaultMode(provider);
 
     this.patchState({ busy: true, error: null });
     try {
-      const agent = await this.client.createAgent({
+      const agent = await this.asAgentClient().createAgent({
         provider,
         cwd: this.config.workspacePath,
-        initialPrompt: input.prompt,
+        initialPrompt: this.applyPlanPrefix(text, input.planMode === true && !nativePlanModeId),
         ...(model ? { model } : {}),
         ...(modeId ? { modeId } : {}),
+        ...this.resolveAttachmentOptions(input),
       });
-      const view = mapAgent(agent);
+      const view = mapAgent(agent as AgentSnapshotLike);
       this.patchState({
+        screen: "thread",
         selectedAgentId: view.id,
         agents: upsertAgent(this.state.agents, view, this.config.workspacePath),
       });
-      await this.selectAgent(view.id);
+      await this.openAgent(view.id);
     } catch (error) {
       this.patchState({ error: errorToMessage(error) });
     } finally {
@@ -167,12 +290,12 @@ export class PaseoService {
   }
 
   /**
-   * 选择 agent 并加载 timeline。
+   * 打开 agent 并加载 timeline。
    * @param agentId agent ID。
    */
-  async selectAgent(agentId: string): Promise<void> {
+  async openAgent(agentId: string): Promise<void> {
     if (!this.client) return;
-    this.patchState({ selectedAgentId: agentId, busy: true, error: null });
+    this.patchState({ screen: "thread", selectedAgentId: agentId, busy: true, error: null });
     try {
       const payload = await this.client.fetchAgentTimeline(agentId, {
         direction: "tail",
@@ -196,26 +319,123 @@ export class PaseoService {
   }
 
   /**
-   * 发送用户消息。
-   * @param input 待发送消息输入。
+   * 兼容旧调用名称，选择 agent 并加载 timeline。
+   * @param agentId agent ID。
    */
-  async sendMessage(input: SendMessageInput): Promise<void> {
+  async selectAgent(agentId: string): Promise<void> {
+    await this.openAgent(agentId);
+  }
+
+  /**
+   * 发送用户消息。
+   * @param agentId agent ID。
+   * @param input composer 输入。
+   */
+  async sendMessage(agentId: string, input: ComposerInput): Promise<void> {
     if (!this.client) return;
     const text = input.text.trim();
     if (!text) return;
-    const optimistic: TimelineItemView = {
-      id: `local-${randomUUID()}`,
-      type: "user",
-      text,
-      timestamp: new Date().toISOString(),
-    };
-    this.patchState({ timeline: [...this.state.timeline, optimistic], busy: true, error: null });
+    const agent = this.state.agents.find((entry) => entry.id === agentId) ?? null;
+    const provider = agent?.provider ?? input.provider ?? this.resolveFallbackProvider();
+    const nativePlanModeId = input.planMode === true ? this.resolveNativePlanMode(provider) : undefined;
+    this.patchState({ busy: true, error: null });
     try {
-      await this.client.sendAgentMessage(input.agentId, text);
+      if (nativePlanModeId && agent?.modeId !== nativePlanModeId) {
+        await this.asAgentClient().setAgentMode(agentId, nativePlanModeId);
+        this.patchState({
+          agents: this.state.agents.map((entry) =>
+            entry.id === agentId ? { ...entry, modeId: nativePlanModeId } : entry,
+          ),
+        });
+      }
+      await this.asAgentClient().sendAgentMessage(
+        agentId,
+        this.applyPlanPrefix(text, input.planMode === true && !nativePlanModeId),
+        this.resolveAttachmentOptions(input),
+      );
     } catch (error) {
       this.patchState({ error: errorToMessage(error) });
     } finally {
       this.patchState({ busy: false });
+    }
+  }
+
+  /**
+   * 归档 agent。
+   * @param agentId agent ID。
+   */
+  async archiveAgent(agentId: string): Promise<void> {
+    if (!this.client) return;
+    this.patchState({ busy: true, error: null });
+    try {
+      const result = await this.asAgentClient().archiveAgent(agentId);
+      const archivedAt = result.archivedAt ?? new Date().toISOString();
+      this.patchState({
+        agents: this.state.agents.map((agent) =>
+          agent.id === agentId ? { ...agent, archivedAt, updatedAt: archivedAt } : agent,
+        ),
+        screen: this.state.selectedAgentId === agentId ? "tasks" : this.state.screen,
+        selectedAgentId: this.state.selectedAgentId === agentId ? null : this.state.selectedAgentId,
+      });
+    } catch (error) {
+      this.patchState({ error: errorToMessage(error) });
+    } finally {
+      this.patchState({ busy: false });
+    }
+  }
+
+  /**
+   * 停止正在运行的 agent。
+   * @param agentId agent ID。
+   */
+  async cancelAgent(agentId: string): Promise<void> {
+    if (!this.client) return;
+    this.patchState({ error: null });
+    try {
+      await this.asAgentClient().cancelAgent(agentId);
+      await this.refreshAgents();
+    } catch (error) {
+      this.patchState({ error: errorToMessage(error) });
+    }
+  }
+
+  /**
+   * 设置 agent 模型。
+   * @param agentId agent ID。
+   * @param modelId 模型 ID。
+   */
+  async setAgentModel(agentId: string, modelId: string): Promise<void> {
+    if (!this.client || !modelId) return;
+    this.patchState({ error: null });
+    try {
+      await this.asAgentClient().setAgentModel(agentId, modelId);
+      this.patchState({
+        agents: this.state.agents.map((agent) =>
+          agent.id === agentId ? { ...agent, model: modelId } : agent,
+        ),
+      });
+    } catch (error) {
+      this.patchState({ error: errorToMessage(error) });
+    }
+  }
+
+  /**
+   * 设置 agent 模式。
+   * @param agentId agent ID。
+   * @param modeId 模式 ID。
+   */
+  async setAgentMode(agentId: string, modeId: string): Promise<void> {
+    if (!this.client || !modeId) return;
+    this.patchState({ error: null });
+    try {
+      await this.asAgentClient().setAgentMode(agentId, modeId);
+      this.patchState({
+        agents: this.state.agents.map((agent) =>
+          agent.id === agentId ? { ...agent, modeId } : agent,
+        ),
+      });
+    } catch (error) {
+      this.patchState({ error: errorToMessage(error) });
     }
   }
 
@@ -382,7 +602,7 @@ export class PaseoService {
     if (!this.client || !this.config.workspacePath) return;
     try {
       const payload = await this.client.fetchAgents({
-        filter: { includeArchived: false },
+        filter: { includeArchived: true },
         sort: [{ key: "updated_at", direction: "desc" }],
         page: { limit: 100 },
       });
@@ -392,12 +612,13 @@ export class PaseoService {
       const selectedAgentId =
         this.state.selectedAgentId && agents.some((agent) => agent.id === this.state.selectedAgentId)
           ? this.state.selectedAgentId
-          : (agents[0]?.id ?? null);
-      this.patchState({ agents, selectedAgentId });
+          : null;
+      this.patchState({
+        agents,
+        selectedAgentId,
+        screen: selectedAgentId ? this.state.screen : "tasks",
+      });
       this.log(`agent 列表刷新完成，当前文件夹 agent 数量=${agents.length}`);
-      if (selectedAgentId && selectedAgentId !== this.state.selectedAgentId) {
-        await this.selectAgent(selectedAgentId);
-      }
     } catch (error) {
       this.patchState({ error: errorToMessage(error) });
     }
@@ -408,15 +629,46 @@ export class PaseoService {
    * @param event daemon 事件。
    */
   private handleDaemonEvent(event: DaemonEvent): void {
-    if (event.type === "agent_stream" && event.agentId === this.state.selectedAgentId) {
-      const item = mapTimelineEntry(event.event.type === "timeline" ? event.event.item : event.event, event.timestamp);
-      this.patchState({ timeline: [...this.state.timeline, item] });
+    const rawEvent = event as unknown as Record<string, unknown>;
+    if (event.type === "agent_stream") {
+      const streamEvent = event.event as unknown as Record<string, unknown>;
+      const patch: Partial<PaseoViewState> = {};
+      const agentPatch = resolveAgentPatchFromStreamEvent(streamEvent, event.timestamp);
+      if (agentPatch) {
+        patch.agents = this.state.agents.map((agent) =>
+          agent.id === event.agentId ? { ...agent, ...agentPatch } : agent,
+        );
+      }
+      if (event.agentId === this.state.selectedAgentId) {
+        const item = mapTimelineEntry(
+          streamEvent.type === "timeline" ? streamEvent.item : event.event,
+          event.timestamp,
+        );
+        patch.timeline = [...this.state.timeline, item];
+      }
+      if (patch.agents || patch.timeline) {
+        this.patchState(patch);
+      }
       return;
     }
 
     if (event.type === "agent_update" && event.payload.kind === "upsert") {
       const agent = mapAgent(event.payload.agent);
       this.patchState({ agents: upsertAgent(this.state.agents, agent, this.config.workspacePath) });
+      return;
+    }
+
+    if (rawEvent.type === "agent_archived") {
+      const payload = isRecord(rawEvent.payload) ? rawEvent.payload : {};
+      const agentId = readString(payload.agentId);
+      const archivedAt = readString(payload.archivedAt) || new Date().toISOString();
+      this.patchState({
+        agents: this.state.agents.map((agent) =>
+          agent.id === agentId ? { ...agent, archivedAt, updatedAt: archivedAt } : agent,
+        ),
+        selectedAgentId: this.state.selectedAgentId === agentId ? null : this.state.selectedAgentId,
+        screen: this.state.selectedAgentId === agentId ? "tasks" : this.state.screen,
+      });
       return;
     }
 
@@ -454,12 +706,113 @@ export class PaseoService {
    * @param patch 局部状态补丁。
    */
   private patchState(patch: Partial<PaseoViewState>): void {
-    this.state = {
+    this.state = this.withDerivedState({
       ...this.state,
       ...patch,
       daemon: patch.daemon ? patch.daemon : this.state.daemon,
-    };
+    });
     this.config.onStateChange(this.state);
+  }
+
+  /**
+   * 补齐派生状态。
+   * @param state 待补齐状态。
+   */
+  private withDerivedState(state: PaseoViewState): PaseoViewState {
+    const selectedAgent =
+      state.selectedAgentId === null
+        ? null
+        : (state.agents.find((agent) => agent.id === state.selectedAgentId) ?? null);
+    return {
+      ...state,
+      selectedAgent,
+      runningCount: state.agents.filter((agent) => isAgentRunning(agent) && !agent.archivedAt).length,
+      composerDefaults: this.resolveComposerDefaults(state.providers, selectedAgent),
+      settingsSummary: this.resolveSettingsSummary(state),
+    };
+  }
+
+  /**
+   * 解析 composer 默认值。
+   * @param providers provider 列表。
+   * @param selectedAgent 当前选中 agent。
+   */
+  private resolveComposerDefaults(
+    providers: ProviderView[],
+    selectedAgent: AgentView | null,
+  ): ComposerDefaultsView {
+    const provider =
+      this.config.defaultProvider() ||
+      selectedAgent?.provider ||
+      providers.find((entry) => entry.status === "ready")?.provider ||
+      providers[0]?.provider ||
+      "codex";
+    const model =
+      this.config.defaultModel() ||
+      selectedAgent?.model ||
+      providers.find((entry) => entry.provider === provider)?.models.find((entry) => entry.isDefault)?.id ||
+      "";
+    const modeId =
+      this.config.defaultMode() ||
+      selectedAgent?.modeId ||
+      providers.find((entry) => entry.provider === provider)?.defaultModeId ||
+      providers.find((entry) => entry.provider === provider)?.modes.find((entry) => entry.isDefault)?.id ||
+      "";
+    return { provider, model, modeId };
+  }
+
+  /**
+   * 解析设置摘要。
+   * @param state 当前状态。
+   */
+  private resolveSettingsSummary(state: PaseoViewState): SettingsSummaryView {
+    return {
+      daemonHost: state.daemon.host,
+      daemonLogPath: state.daemon.logPath,
+      defaultProvider: this.config.defaultProvider(),
+      defaultModel: this.config.defaultModel(),
+      defaultMode: this.config.defaultMode(),
+    };
+  }
+
+  /**
+   * 解析附加上下文参数。
+   * @param input composer 输入。
+   */
+  private resolveAttachmentOptions(input: ComposerInput): Record<string, unknown> {
+    const attachments: Array<Record<string, unknown>> = [];
+    if (input.includeIdeContext) {
+      const text = this.config.ideContext();
+      if (text?.trim()) {
+        attachments.push({
+          type: "text",
+          mimeType: "text/plain",
+          title: "IDE context",
+          text,
+        });
+      }
+    }
+    return attachments.length > 0 ? { attachments } : {};
+  }
+
+  /**
+   * 给计划模式追加文本约束。
+   * @param text 原始消息。
+   * @param enabled 是否启用计划模式。
+   */
+  private applyPlanPrefix(text: string, enabled: boolean): string {
+    if (!enabled) return text;
+    return ["请先只制定计划，不要修改文件或执行会改变仓库状态的命令。", text].join("\n\n");
+  }
+
+  /**
+   * 获取带额外方法的 daemon client。
+   */
+  private asAgentClient(): AgentClientLike {
+    if (!this.client) {
+      throw new Error("Paseo daemon 未连接");
+    }
+    return this.client as unknown as AgentClientLike;
   }
 
   /**
@@ -486,6 +839,25 @@ export class PaseoService {
   private resolveDefaultMode(provider: string): string | undefined {
     const entry = this.state.providers.find((candidate) => candidate.provider === provider);
     return entry?.defaultModeId ?? entry?.modes.find((mode) => mode.isDefault)?.id;
+  }
+
+  /**
+   * 查找 provider 原生计划模式。
+   * @param provider provider ID。
+   */
+  private resolveNativePlanMode(provider: string): string | undefined {
+    const entry = this.state.providers.find((candidate) => candidate.provider === provider);
+    return entry?.modes.find((mode) => {
+      const id = mode.id.toLowerCase();
+      const label = mode.label.toLowerCase();
+      return (
+        id === "plan" ||
+        id === "planning" ||
+        id.includes("plan") ||
+        label.includes("plan") ||
+        mode.label.includes("计划")
+      );
+    })?.id;
   }
 
   /**
@@ -587,22 +959,17 @@ function createWebSocket(
  * 映射 agent 到 Webview 状态。
  * @param agent daemon agent 快照。
  */
-function mapAgent(agent: {
-  id: string;
-  title?: string | null;
-  provider: string;
-  cwd: string;
-  status: string;
-  updatedAt: string;
-  lastError?: string | null;
-}): AgentView {
+function mapAgent(agent: AgentSnapshotLike): AgentView {
   return {
     id: agent.id,
     title: agent.title?.trim() || "New agent",
     provider: agent.provider,
     cwd: agent.cwd,
     status: agent.status,
+    model: agent.model ?? null,
+    modeId: agent.currentModeId ?? null,
     updatedAt: agent.updatedAt,
+    archivedAt: agent.archivedAt ?? null,
     lastError: agent.lastError ?? null,
   };
 }
@@ -658,36 +1025,69 @@ function mapTimelineEntry(item: unknown, timestamp?: string, idSeed?: string): T
   const type = record.type;
   const id = `${idSeed ?? timestamp ?? Date.now()}-${Math.random().toString(36).slice(2)}`;
   if (type === "user_message") {
-    return { id, type: "user", text: readString(record.text), timestamp };
+    return { id, type: "user", title: "用户提示提交", text: readString(record.text), status: "completed", timestamp };
   }
   if (type === "assistant_message") {
-    return { id, type: "assistant", text: readString(record.text), timestamp };
+    return { id, type: "assistant", title: "Assistant", text: readString(record.text), timestamp };
   }
   if (type === "reasoning") {
-    return { id, type: "reasoning", text: readString(record.text), timestamp };
+    return { id, type: "reasoning", title: "已处理", text: readString(record.text), collapsible: true, timestamp };
   }
   if (type === "error") {
-    return { id, type: "error", text: readString(record.message), timestamp };
+    return { id, type: "error", title: "错误", text: readString(record.message), status: "failed", timestamp };
   }
   if (type === "todo") {
     const items = Array.isArray(record.items)
       ? record.items.map((entry) => (isRecord(entry) ? `${entry.completed ? "[x]" : "[ ]"} ${entry.text}` : ""))
       : [];
-    return { id, type: "todo", text: items.filter(Boolean).join("\n"), timestamp };
+    return { id, type: "todo", title: "待办", text: items.filter(Boolean).join("\n"), collapsible: true, timestamp };
   }
   if (type === "tool_call") {
     return {
       id,
       type: "tool",
+      title: readString(record.name) || "工具调用",
       text: `${readString(record.name) || "tool"} ${readString(record.status)}`.trim(),
       status: readString(record.status),
+      collapsible: true,
       timestamp,
     };
   }
   if (typeof type === "string") {
-    return { id, type: "system", text: type, timestamp };
+    return { id, type: "system", title: "系统事件", text: type, collapsible: true, timestamp };
   }
-  return { id, type: "system", text: JSON.stringify(item), timestamp };
+  return { id, type: "system", title: "系统事件", text: JSON.stringify(item), collapsible: true, timestamp };
+}
+
+/**
+ * 从 stream 生命周期事件同步 agent 摘要状态。
+ * @param event daemon stream 事件。
+ * @param timestamp 事件时间戳。
+ */
+function resolveAgentPatchFromStreamEvent(
+  event: Record<string, unknown>,
+  timestamp?: string,
+): Partial<AgentView> | null {
+  const type = readString(event.type);
+  const updatedAt = timestamp ?? new Date().toISOString();
+  if (type === "turn_started") {
+    return { status: "running", updatedAt };
+  }
+  if (type === "turn_completed" || type === "turn_failed" || type === "turn_canceled") {
+    const lastError = type === "turn_failed" ? readString(event.error) : null;
+    return { status: "idle", updatedAt, lastError };
+  }
+  if (type === "attention_required" && readString(event.reason) !== "permission") {
+    return { status: "idle", updatedAt };
+  }
+  if (type === "mode_changed") {
+    return { modeId: readNullableString(event.currentModeId), updatedAt };
+  }
+  if (type === "model_changed") {
+    const runtimeInfo = isRecord(event.runtimeInfo) ? event.runtimeInfo : {};
+    return { model: readNullableString(runtimeInfo.model), updatedAt };
+  }
+  return null;
 }
 
 /**
@@ -700,6 +1100,14 @@ function upsertAgent(agents: AgentView[], next: AgentView, workspacePath: string
   if (workspacePath && next.cwd !== workspacePath) return agents;
   const filtered = agents.filter((agent) => agent.id !== next.id);
   return [next, ...filtered].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+/**
+ * 判断 agent 是否正在运行。
+ * @param agent agent 摘要。
+ */
+function isAgentRunning(agent: AgentView): boolean {
+  return agent.status === "running" || agent.status === "initializing";
 }
 
 /**
@@ -716,6 +1124,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  */
 function readString(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+/**
+ * 读取可空字符串字段。
+ * @param value 待读取值。
+ */
+function readNullableString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
 }
 
 /**

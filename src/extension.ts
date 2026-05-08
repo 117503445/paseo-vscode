@@ -19,6 +19,7 @@ export function activate(context: vscode.ExtensionContext): void {
     defaultProvider: () => readStringConfig("agent.defaultProvider"),
     defaultModel: () => readStringConfig("agent.defaultModel"),
     defaultMode: () => readStringConfig("agent.defaultMode"),
+    ideContext: () => resolveIdeContext(workspacePath),
     onStateChange: () => provider?.postState(),
     log: (message) => output.appendLine(`[${new Date().toISOString()}] ${message}`),
   });
@@ -96,4 +97,27 @@ function readStringConfig(key: string): string {
 function readNumberConfig(key: string, fallback: number): number {
   const value = vscode.workspace.getConfiguration("paseo").get<number>(key, fallback);
   return Number.isFinite(value) ? value : fallback;
+}
+
+/**
+ * 解析当前 IDE 上下文。
+ * @param workspacePath 当前工作区路径。
+ */
+function resolveIdeContext(workspacePath: string | null): string {
+  const editor = vscode.window.activeTextEditor;
+  const lines = [`Workspace: ${workspacePath ?? "未打开文件夹"}`];
+  if (!editor) return lines.join("\n");
+  lines.push(`Active file: ${editor.document.uri.fsPath}`);
+  const selection = editor.selection;
+  if (!selection.isEmpty) {
+    const text = editor.document.getText(selection).slice(0, 4000);
+    lines.push(`Selection:\n${text}`);
+    return lines.join("\n");
+  }
+  const visibleRange = editor.visibleRanges[0];
+  if (visibleRange) {
+    const text = editor.document.getText(visibleRange).slice(0, 4000);
+    lines.push(`Visible text:\n${text}`);
+  }
+  return lines.join("\n");
 }

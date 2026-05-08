@@ -51,7 +51,7 @@ export function renderWebviewHtml(webview: vscode.Webview, extensionUri: vscode.
         cursor: default;
         opacity: 0.55;
       }
-      select, textarea {
+      input, select, textarea {
         width: 100%;
         box-sizing: border-box;
         border: 1px solid var(--vscode-input-border, transparent);
@@ -59,53 +59,107 @@ export function renderWebviewHtml(webview: vscode.Webview, extensionUri: vscode.
         background: var(--vscode-input-background);
         border-radius: 4px;
       }
+      input, select {
+        height: 28px;
+        padding: 3px 6px;
+      }
       textarea {
-        min-height: 72px;
+        min-height: 76px;
         resize: vertical;
         padding: 8px;
       }
       .app {
         display: grid;
-        grid-template-rows: auto auto 1fr auto;
+        grid-template-rows: auto 1fr auto;
         height: 100vh;
         min-height: 360px;
       }
-      .status {
+      .topbar {
         display: grid;
-        gap: 4px;
-        padding: 10px;
+        grid-template-columns: auto 1fr auto;
+        gap: 6px;
+        align-items: center;
+        padding: 8px 10px;
         border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, transparent);
       }
-      .status-main {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
+      .title {
+        font-weight: 600;
       }
-      .status-text {
+      .title-button {
+        min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+        color: var(--vscode-foreground);
+        background: transparent;
+        border: 0;
+        text-align: left;
+      }
+      .top-actions {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        justify-content: end;
+      }
+      .icon-button, .count-button {
+        min-width: 28px;
+        color: var(--vscode-foreground);
+        background: transparent;
+        border-color: var(--vscode-input-border, transparent);
+        padding: 3px 6px;
+      }
+      .count-button {
+        justify-self: start;
+        color: var(--vscode-descriptionForeground);
+      }
+      .status-line {
+        grid-column: 1 / -1;
+        display: flex;
+        gap: 6px;
+        min-width: 0;
+        align-items: center;
+      }
+      .status-pill {
         font-weight: 600;
       }
-      .muted {
+      .muted, .empty {
         color: var(--vscode-descriptionForeground);
         overflow-wrap: anywhere;
       }
-      .actions, .form-row {
-        display: flex;
-        gap: 6px;
+      .task-view {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        min-height: 0;
       }
-      .agents {
-        max-height: 32vh;
-        overflow: auto;
+      .filters {
+        display: grid;
+        gap: 8px;
+        padding: 8px 10px;
         border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, transparent);
       }
-      .agent {
+      .segmented {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 4px;
+      }
+      .segmented button {
+        color: var(--vscode-foreground);
+        background: transparent;
+        border-color: var(--vscode-input-border, transparent);
+      }
+      .segmented button.active {
+        background: var(--vscode-list-activeSelectionBackground);
+        color: var(--vscode-list-activeSelectionForeground);
+      }
+      .task-list, .timeline {
+        overflow: auto;
+        min-height: 0;
+      }
+      .task-item {
         width: 100%;
         display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 2px 8px;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
         text-align: left;
         color: var(--vscode-foreground);
         background: transparent;
@@ -113,46 +167,122 @@ export function renderWebviewHtml(webview: vscode.Webview, extensionUri: vscode.
         border-radius: 0;
         padding: 8px 10px;
       }
-      .agent.active {
-        background: var(--vscode-list-activeSelectionBackground);
-        color: var(--vscode-list-activeSelectionForeground);
+      .task-item:hover {
+        background: var(--vscode-list-hoverBackground);
       }
-      .agent-title {
+      .task-main {
+        min-width: 0;
+      }
+      .task-title {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+        font-weight: 600;
+      }
+      .task-side {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .thread-view {
+        display: grid;
+        min-height: 0;
       }
       .timeline {
-        overflow: auto;
         padding: 10px;
       }
-      .item {
-        margin-bottom: 10px;
-        padding-bottom: 10px;
-        border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, transparent);
+      .message {
+        display: grid;
+        gap: 6px;
+        margin-bottom: 12px;
       }
-      .item-header {
-        margin-bottom: 4px;
+      .message-label {
         color: var(--vscode-descriptionForeground);
         font-size: 12px;
-        text-transform: uppercase;
       }
-      .item-text {
+      .bubble {
+        justify-self: end;
+        max-width: 88%;
+        border-radius: 8px;
+        padding: 8px 10px;
+        background: var(--vscode-editorWidget-background);
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .message-text {
         white-space: pre-wrap;
         overflow-wrap: anywhere;
         line-height: 1.45;
       }
+      .message-actions {
+        display: flex;
+        gap: 4px;
+      }
+      .processing {
+        margin: 8px 0 12px;
+        color: var(--vscode-descriptionForeground);
+      }
+      .processing summary {
+        cursor: pointer;
+      }
+      .processing-body {
+        margin: 6px 0 0;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        color: var(--vscode-foreground);
+        font-family: var(--vscode-font-family);
+      }
+      .error-block {
+        color: var(--vscode-errorForeground);
+      }
+      .empty {
+        padding: 18px 10px;
+        text-align: center;
+      }
       .composer {
+        position: relative;
         display: grid;
         gap: 8px;
         padding: 10px;
         border-top: 1px solid var(--vscode-sideBarSectionHeader-border, transparent);
       }
-      .new-agent {
+      .composer-controls {
         display: grid;
+        grid-template-columns: auto minmax(54px, 1fr) minmax(54px, 1fr) minmax(54px, 1fr) auto;
+        gap: 6px;
+        align-items: center;
+      }
+      .composer-menu {
+        position: absolute;
+        left: 10px;
+        bottom: calc(100% - 6px);
+        z-index: 2;
+        min-width: 190px;
+        padding: 6px;
+        border: 1px solid var(--vscode-input-border, transparent);
+        border-radius: 6px;
+        background: var(--vscode-dropdown-background);
+        box-shadow: 0 4px 12px var(--vscode-widget-shadow, rgba(0,0,0,0.25));
+      }
+      .menu-item {
+        width: 100%;
+        box-sizing: border-box;
+        display: flex;
+        align-items: center;
         gap: 8px;
-        padding: 10px;
-        border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, transparent);
+        min-height: 28px;
+        padding: 4px 6px;
+        border-radius: 4px;
+        color: var(--vscode-foreground);
+        background: transparent;
+        border: 0;
+      }
+      .menu-item input {
+        width: auto;
+        height: auto;
+      }
+      .menu-item.disabled {
+        color: var(--vscode-descriptionForeground);
       }
       .error {
         color: var(--vscode-errorForeground);

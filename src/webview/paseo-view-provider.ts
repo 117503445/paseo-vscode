@@ -75,7 +75,7 @@ export class PaseoViewProvider implements vscode.WebviewViewProvider {
       ignoreFocusOut: true,
     });
     if (!prompt?.trim()) return;
-    await this.service.createAgent({ provider, prompt: prompt.trim() });
+    await this.service.createAgent({ provider, text: prompt.trim() });
     this.postState();
   }
 
@@ -94,17 +94,46 @@ export class PaseoViewProvider implements vscode.WebviewViewProvider {
       case "reconnect":
         await this.reconnect();
         return;
-      case "selectAgent":
-        await this.service.selectAgent(message.agentId);
+      case "openSettings":
+        await vscode.commands.executeCommand("workbench.action.openSettings", "paseo");
+        return;
+      case "openAgent":
+        await this.service.openAgent(message.agentId);
         this.postState();
         return;
-      case "createAgent":
-        await this.service.createAgent(message.input);
+      case "backToTasks":
+        this.service.backToTasks();
         this.postState();
         return;
-      case "sendMessage":
-        await this.service.sendMessage(message.input);
+      case "archiveAgent":
+        await this.service.archiveAgent(message.agentId);
         this.postState();
+        return;
+      case "cancelAgent":
+        await this.service.cancelAgent(message.agentId);
+        this.postState();
+        return;
+      case "setAgentModel":
+        await this.service.setAgentModel(message.agentId, message.modelId);
+        this.postState();
+        return;
+      case "setAgentMode":
+        await this.service.setAgentMode(message.agentId, message.modeId);
+        this.postState();
+        return;
+      case "setTaskFilter":
+        this.service.setTaskFilter(message.filter);
+        this.postState();
+        return;
+      case "setSearchQuery":
+        this.service.setSearchQuery(message.query);
+        this.postState();
+        return;
+      case "sendComposer":
+        await this.service.sendComposer(message.input);
+        this.postState();
+        return;
+      case "toggleComposerOption":
         return;
     }
   }
