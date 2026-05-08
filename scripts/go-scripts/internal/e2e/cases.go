@@ -17,6 +17,8 @@ import (
 func runCase(ctx context.Context, page playwright.Page, baseURL string, name string) error {
 	_ = ctx
 	switch name {
+	case "command-new-agent-cold-start":
+		return createAgentFromCommandPaletteColdStart(page)
 	case "offline-daemon-start":
 		frame, err := openPaseoView(page)
 		if err != nil {
@@ -214,6 +216,56 @@ func createAgentFromCommandPalette(page playwright.Page, frame playwright.Frame)
 	if err := expectSelectValue(frame.Locator(`[data-testid="paseo-composer-provider"]`), "mock", 30*time.Second); err != nil {
 		return err
 	}
+	if err := runNewAgentCommand(page, "请从命令面板创建一段测试消息"); err != nil {
+		return err
+	}
+	return expectCommandCreatedAgent(frame)
+}
+
+// createAgentFromCommandPaletteColdStart 从未打开侧栏的命令面板创建 agent。
+// page 是 code-server 页面。
+func createAgentFromCommandPaletteColdStart(page playwright.Page) error {
+	if err := page.Locator(`.monaco-workbench`).WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(60_000),
+	}); err != nil {
+		return err
+	}
+	if err := trustWorkspaceIfPrompted(page); err != nil {
+		return err
+	}
+	if err := runNewAgentCommand(page, "请从冷启动命令面板创建一段测试消息"); err != nil {
+		return err
+	}
+	frame, err := openPaseoView(page)
+	if err != nil {
+		return err
+	}
+	if err := expectText(frame.Locator(`[data-testid="paseo-daemon-status"]`), "已连接", 60*time.Second); err != nil {
+		return err
+	}
+	return expectCommandCreatedAgent(frame)
+}
+
+// expectCommandCreatedAgent 断言命令面板创建的 agent 有回复并清理运行状态。
+// frame 是 Paseo webview frame。
+func expectCommandCreatedAgent(frame playwright.Frame) error {
+	if err := frame.Locator(`[data-testid="paseo-thread-view"]`).WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(60_000),
+	}); err != nil {
+		return err
+	}
+	if err := frame.Locator(`[data-testid="paseo-message-assistant"]`).First().WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(60_000),
+	}); err != nil {
+		return err
+	}
+	return stopSelectedAgentIfRunning(frame)
+}
+
+// runNewAgentCommand 执行命令面板新建 agent 命令并填写提示词。
+// page 是 code-server 页面。
+// message 是初始用户消息。
+func runNewAgentCommand(page playwright.Page, message string) error {
 	if err := page.Keyboard().Press("Control+Shift+P"); err != nil {
 		return err
 	}
@@ -241,23 +293,10 @@ func createAgentFromCommandPalette(page playwright.Page, frame playwright.Frame)
 	}); err != nil {
 		return err
 	}
-	if err := promptInput.Fill("请从命令面板创建一段测试消息"); err != nil {
+	if err := promptInput.Fill(message); err != nil {
 		return err
 	}
-	if err := page.Keyboard().Press("Enter"); err != nil {
-		return err
-	}
-	if err := frame.Locator(`[data-testid="paseo-thread-view"]`).WaitFor(playwright.LocatorWaitForOptions{
-		Timeout: playwright.Float(60_000),
-	}); err != nil {
-		return err
-	}
-	if err := frame.Locator(`[data-testid="paseo-message-assistant"]`).First().WaitFor(playwright.LocatorWaitForOptions{
-		Timeout: playwright.Float(60_000),
-	}); err != nil {
-		return err
-	}
-	return stopSelectedAgentIfRunning(frame)
+	return page.Keyboard().Press("Enter")
 }
 
 // stopSelectedAgentIfRunning 停止当前仍在运行的 agent，避免污染后续用例。

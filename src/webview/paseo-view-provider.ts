@@ -67,14 +67,20 @@ export class PaseoViewProvider implements vscode.WebviewViewProvider {
    * 从命令面板创建 agent。
    */
   async createAgentFromCommand(): Promise<void> {
-    const state = this.service.getState();
-    const defaults = state.composerDefaults;
     const prompt = await vscode.window.showInputBox({
       title: "Paseo: New Agent",
       prompt: "输入初始消息",
       ignoreFocusOut: true,
     });
     if (!prompt?.trim()) return;
+    await this.service.start();
+    const state = this.service.getState();
+    if (state.daemon.status !== "connected") {
+      await vscode.window.showErrorMessage(state.daemon.message ?? "Paseo daemon 未连接");
+      this.postState();
+      return;
+    }
+    const defaults = state.composerDefaults;
     await this.service.createAgent({
       text: prompt.trim(),
       provider: defaults.provider || undefined,
