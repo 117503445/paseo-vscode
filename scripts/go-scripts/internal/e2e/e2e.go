@@ -15,7 +15,7 @@ type Config struct {
 	ProjectRoot  string
 }
 
-var allCases = []string{"offline-daemon-start", "codex-like-ux", "mock-chat", "reload-reconnect", "no-folder"}
+var allCases = []string{"offline-daemon-start", "default-ready-provider", "codex-like-ux", "mock-chat", "reload-reconnect", "no-folder"}
 
 // Run 执行 E2E 命令。
 // args 是 e2e 子命令参数。

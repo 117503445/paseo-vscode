@@ -549,10 +549,17 @@ export class PaseoService {
       reconnect: { enabled: true, baseDelayMs: 1000, maxDelayMs: 5000 },
       webSocketFactory: (url, options) => createWebSocket(url, options, target),
     });
-    await client.connect();
+    const unsubscribeDaemon = client.subscribe((event) => this.handleDaemonEvent(event));
+    try {
+      await client.connect();
+    } catch (error) {
+      unsubscribeDaemon();
+      await client.close().catch(() => undefined);
+      throw error;
+    }
     await this.closeClient();
     this.client = client;
-    this.unsubscribeDaemon = client.subscribe((event) => this.handleDaemonEvent(event));
+    this.unsubscribeDaemon = unsubscribeDaemon;
     this.patchState({
       daemon: {
         status: "connected",
@@ -641,6 +648,11 @@ export class PaseoService {
       return;
     }
 
+    if (rawEvent.type === "providers_snapshot_update") {
+      this.handleProvidersSnapshotUpdate(rawEvent.payload);
+      return;
+    }
+
     if (rawEvent.type === "agent_archived") {
       const payload = isRecord(rawEvent.payload) ? rawEvent.payload : {};
       const agentId = readString(payload.agentId);
@@ -662,6 +674,22 @@ export class PaseoService {
           this.state.selectedAgentId === event.agentId ? null : this.state.selectedAgentId,
       });
     }
+  }
+
+  /**
+   * 处理 provider 快照增量更新。
+   * @param payload daemon 推送的 provider 快照。
+   */
+  private handleProvidersSnapshotUpdate(payload: unknown): void {
+    if (!isRecord(payload)) return;
+    const cwd = readString(payload.cwd);
+    if (cwd && cwd !== this.config.workspacePath) return;
+    const entries = Array.isArray(payload.entries) ? payload.entries : [];
+    this.patchState({
+      providers: entries
+        .filter(isRecord)
+        .map((entry) => mapProvider(entry as unknown as Parameters<typeof mapProvider>[0])),
+    });
   }
 
   /**
@@ -724,12 +752,7 @@ export class PaseoService {
     providers: ProviderView[],
     selectedAgent: AgentView | null,
   ): ComposerDefaultsView {
-    const provider =
-      this.config.defaultProvider() ||
-      selectedAgent?.provider ||
-      providers.find((entry) => entry.status === "ready")?.provider ||
-      providers[0]?.provider ||
-      "codex";
+    const provider = this.resolveDefaultProvider(providers, selectedAgent);
     const model =
       this.config.defaultModel() ||
       selectedAgent?.model ||
@@ -742,6 +765,27 @@ export class PaseoService {
       providers.find((entry) => entry.provider === provider)?.modes.find((entry) => entry.isDefault)?.id ||
       "";
     return { provider, model, modeId };
+  }
+
+  /**
+   * 解析默认 provider。
+   * @param providers provider 列表。
+   * @param selectedAgent 当前选中 agent。
+   */
+  private resolveDefaultProvider(providers: ProviderView[], selectedAgent: AgentView | null): string {
+    const configuredProvider = this.config.defaultProvider();
+    if (configuredProvider) return configuredProvider;
+    if (selectedAgent?.provider) return selectedAgent.provider;
+
+    const readyProviders = providers.filter((entry) => entry.status === "ready");
+    const mockProvider = providers.find((entry) => entry.provider === "mock");
+    return (
+      mockProvider?.provider ||
+      readyProviders.find((entry) => entry.models.length > 0)?.provider ||
+      readyProviders[0]?.provider ||
+      providers[0]?.provider ||
+      "codex"
+    );
   }
 
   /**
@@ -802,7 +846,12 @@ export class PaseoService {
    * 推导 fallback provider。
    */
   private resolveFallbackProvider(): string {
-    return this.state.providers.find((provider) => provider.status === "ready")?.provider ?? "codex";
+    const readyProviders = this.state.providers.filter((provider) => provider.status === "ready");
+    return (
+      this.state.providers.find((provider) => provider.provider === "mock")?.provider ??
+      readyProviders[0]?.provider ??
+      "codex"
+    );
   }
 
   /**

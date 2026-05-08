@@ -32,6 +32,15 @@ func runCase(ctx context.Context, page playwright.Page, baseURL string, name str
 			return err
 		}
 		return createMockChat(frame)
+	case "default-ready-provider":
+		frame, err := openPaseoView(page)
+		if err != nil {
+			return err
+		}
+		if err := expectText(frame.Locator(`[data-testid="paseo-daemon-status"]`), "已连接", 60*time.Second); err != nil {
+			return err
+		}
+		return createChatWithDefaultReadyProvider(frame)
 	case "codex-like-ux":
 		frame, err := openPaseoView(page)
 		if err != nil {
@@ -129,6 +138,34 @@ func createMockChat(frame playwright.Frame) error {
 		return err
 	}
 	return waitLocatorCountAtLeast(frame.Locator(`[data-testid="paseo-message-user"]`), 2, 30*time.Second)
+}
+
+// createChatWithDefaultReadyProvider 验证首次使用时默认可用 provider 可直接发送。
+// frame 是 Paseo webview frame。
+func createChatWithDefaultReadyProvider(frame playwright.Frame) error {
+	if err := expectSelectValue(frame.Locator(`[data-testid="paseo-composer-provider"]`), "mock", 30*time.Second); err != nil {
+		return err
+	}
+	if err := selectOptionWhenAvailable(frame.Locator(`[data-testid="paseo-composer-model"]`), "ten-second-stream", 30*time.Second); err != nil {
+		return err
+	}
+	if err := expectSelectValue(frame.Locator(`[data-testid="paseo-composer-mode"]`), "load-test", 30*time.Second); err != nil {
+		return err
+	}
+	if err := frame.Locator(`[data-testid="paseo-composer-input"]`).Fill("请用默认 provider 回复一段测试消息"); err != nil {
+		return err
+	}
+	if err := frame.Locator(`[data-testid="paseo-composer-send"]`).Click(); err != nil {
+		return err
+	}
+	if err := frame.Locator(`[data-testid="paseo-thread-view"]`).WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(60_000),
+	}); err != nil {
+		return err
+	}
+	return frame.Locator(`[data-testid="paseo-message-assistant"]`).First().WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(60_000),
+	})
 }
 
 // expectCodexLikeUX 断言 Paseo 具备 Codex 风格任务交互。

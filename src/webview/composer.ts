@@ -15,6 +15,9 @@ export class ComposerController {
   private provider = "";
   private model = "";
   private mode = "";
+  private providerTouched = false;
+  private modelTouched = false;
+  private modeTouched = false;
 
   /**
    * 创建 composer 控制器。
@@ -33,13 +36,41 @@ export class ComposerController {
    * @param nextState 当前视图状态。
    */
   syncDefaults(nextState: PaseoViewState): void {
-    if (!this.provider) this.provider = nextState.composerDefaults.provider;
-    if (!this.model) this.model = nextState.composerDefaults.model;
-    if (!this.mode) this.mode = nextState.composerDefaults.modeId;
     if (nextState.selectedAgent) {
       this.provider = nextState.selectedAgent.provider;
       this.model = nextState.selectedAgent.model ?? nextState.composerDefaults.model;
       this.mode = nextState.selectedAgent.modeId ?? nextState.composerDefaults.modeId;
+      this.providerTouched = false;
+      this.modelTouched = false;
+      this.modeTouched = false;
+      return;
+    }
+
+    const providerOptions = this.renderableProviders(nextState);
+    const defaultProvider = this.resolveRenderableProvider(nextState, providerOptions);
+    const providerChanged =
+      (!this.provider || !this.providerTouched || !this.hasProvider(providerOptions, this.provider)) &&
+      this.provider !== defaultProvider;
+    if (!this.provider || !this.providerTouched || !this.hasProvider(providerOptions, this.provider)) {
+      this.provider = defaultProvider;
+      this.providerTouched = false;
+    }
+    if (providerChanged) {
+      this.modelTouched = false;
+      this.modeTouched = false;
+    }
+
+    const provider = this.findProvider(nextState);
+    const modelValid = this.hasOption(provider?.models ?? [], this.model);
+    if (!this.model || !this.modelTouched || !modelValid) {
+      this.model = this.defaultModelForProvider(nextState, this.provider);
+      this.modelTouched = false;
+    }
+
+    const modeValid = this.hasOption(provider?.modes ?? [], this.mode);
+    if (!this.mode || !this.modeTouched || !modeValid) {
+      this.mode = this.defaultModeForProvider(nextState, this.provider);
+      this.modeTouched = false;
     }
   }
 
@@ -112,8 +143,7 @@ export class ComposerController {
    * @param nextState 当前视图状态。
    */
   private renderProviderSelect(nextState: PaseoViewState): HTMLSelectElement {
-    const readyProviders = nextState.providers.filter((provider) => provider.status === "ready");
-    const providers = readyProviders.length > 0 ? readyProviders : nextState.providers;
+    const providers = this.renderableProviders(nextState);
     const select = createSelect(
       providers.map((provider) => ({ id: provider.provider, label: provider.label, isDefault: false })),
       this.provider,
@@ -121,9 +151,12 @@ export class ComposerController {
     select.dataset.testid = "paseo-composer-provider";
     select.disabled = Boolean(nextState.selectedAgentId);
     select.addEventListener("change", () => {
+      this.providerTouched = true;
       this.provider = select.value;
       this.model = this.defaultModelForProvider(nextState, this.provider);
       this.mode = this.defaultModeForProvider(nextState, this.provider);
+      this.modelTouched = false;
+      this.modeTouched = false;
       this.rerender(nextState);
     });
     return select;
@@ -138,6 +171,7 @@ export class ComposerController {
     const select = createSelect(provider?.models ?? [], this.model);
     select.dataset.testid = "paseo-composer-model";
     select.addEventListener("change", () => {
+      this.modelTouched = true;
       this.model = select.value;
       if (nextState.selectedAgentId && select.value) {
         this.post({ type: "setAgentModel", agentId: nextState.selectedAgentId, modelId: select.value });
@@ -155,6 +189,7 @@ export class ComposerController {
     const select = createSelect(provider?.modes ?? [], this.mode);
     select.dataset.testid = "paseo-composer-mode";
     select.addEventListener("change", () => {
+      this.modeTouched = true;
       this.mode = select.value;
       if (nextState.selectedAgentId && select.value) {
         this.post({ type: "setAgentMode", agentId: nextState.selectedAgentId, modeId: select.value });
@@ -237,6 +272,56 @@ export class ComposerController {
    */
   private findProvider(nextState: PaseoViewState): ProviderView | undefined {
     return nextState.providers.find((provider) => provider.provider === this.provider);
+  }
+
+  /**
+   * 查询当前应展示的 provider 列表。
+   * @param nextState 当前视图状态。
+   */
+  private renderableProviders(nextState: PaseoViewState): ProviderView[] {
+    const readyProviders = nextState.providers.filter((provider) => provider.status === "ready");
+    const baseProviders = readyProviders.length > 0 ? readyProviders : nextState.providers;
+    const mockProvider = nextState.providers.find((provider) => provider.provider === "mock");
+    const providers =
+      mockProvider && !baseProviders.some((provider) => provider.provider === "mock")
+        ? [mockProvider, ...baseProviders]
+        : baseProviders;
+    if (!nextState.selectedAgent) return providers;
+    if (providers.some((provider) => provider.provider === nextState.selectedAgent?.provider)) return providers;
+    const selectedProvider = nextState.providers.find(
+      (provider) => provider.provider === nextState.selectedAgent?.provider,
+    );
+    return selectedProvider ? [selectedProvider, ...providers] : providers;
+  }
+
+  /**
+   * 解析可展示 provider 默认值。
+   * @param nextState 当前视图状态。
+   * @param providers 可展示 provider 列表。
+   */
+  private resolveRenderableProvider(nextState: PaseoViewState, providers: ProviderView[]): string {
+    if (this.hasProvider(providers, nextState.composerDefaults.provider)) {
+      return nextState.composerDefaults.provider;
+    }
+    return providers[0]?.provider ?? nextState.composerDefaults.provider;
+  }
+
+  /**
+   * 判断 provider 是否存在于列表。
+   * @param providers provider 列表。
+   * @param provider provider ID。
+   */
+  private hasProvider(providers: ProviderView[], provider: string): boolean {
+    return providers.some((entry) => entry.provider === provider);
+  }
+
+  /**
+   * 判断选项是否存在。
+   * @param options 下拉选项。
+   * @param value 选项 ID。
+   */
+  private hasOption(options: Array<{ id: string }>, value: string): boolean {
+    return options.some((entry) => entry.id === value);
   }
 
   /**

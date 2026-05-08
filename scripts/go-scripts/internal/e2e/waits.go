@@ -67,6 +67,33 @@ func waitLocatorCountAtLeast(locator playwright.Locator, minimum int, timeout ti
 	return fmt.Errorf("等待元素数量达到 %d 超时，最后数量：%d", minimum, lastCount)
 }
 
+// expectSelectValue 等待 select 元素选中指定值。
+// locator 是 select 元素。
+// expected 是期望选中值。
+// timeout 是等待超时。
+func expectSelectValue(locator playwright.Locator, expected string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	lastValue := ""
+	lastOptions := ""
+	for time.Now().Before(deadline) {
+		value, err := locator.InputValue()
+		if err == nil {
+			lastValue = value
+		}
+		options, optionsErr := locator.Evaluate(`element => Array.from(element.options).map(option => option.value + ":" + option.textContent).join(", ")`, nil)
+		if optionsErr == nil {
+			if optionsText, ok := options.(string); ok {
+				lastOptions = optionsText
+			}
+		}
+		if err == nil && value == expected {
+			return nil
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return fmt.Errorf("等待 select 值 %q 超时，最后值：%q，可选项：%s", expected, lastValue, lastOptions)
+}
+
 // expectText 等待元素包含指定文本。
 // locator 是目标元素。
 // expected 是期望文本。
