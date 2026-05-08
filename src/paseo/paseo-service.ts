@@ -1,14 +1,18 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { randomUUID } from "node:crypto";
-import net from "node:net";
-import { WebSocket } from "ws";
-import type { DaemonClient, DaemonEvent, WebSocketLike } from "@getpaseo/server";
+import type { DaemonClient, DaemonEvent } from "@getpaseo/server";
 import {
   resolveConnectionTarget,
   resolveDaemonHosts,
   resolveDaemonLogPath,
   type ConnectionTarget,
 } from "./connection-target";
+import {
+  createWebSocket,
+  maskHostForLog,
+  probeConnectionTarget,
+  resolveClientAppVersion,
+} from "./daemon-transport";
 import { startDaemonDetached } from "./daemon-manager";
 import { loadPaseoServerModule } from "./server-module";
 import type {
@@ -19,8 +23,19 @@ import type {
   ProviderView,
   SettingsSummaryView,
   TaskFilter,
-  TimelineItemView,
 } from "./types";
+import {
+  errorToMessage,
+  isAgentRunning,
+  isRecord,
+  mapAgent,
+  mapProvider,
+  mapTimelineEntry,
+  readString,
+  resolveAgentPatchFromStreamEvent,
+  upsertAgent,
+  type AgentSnapshotLike,
+} from "./view-model";
 
 interface PaseoServiceConfig {
   workspacePath: string | null;
@@ -73,29 +88,6 @@ interface AgentClientLike {
   setAgentMode(agentId: string, modeId: string): Promise<unknown>;
 }
 
-interface AgentSnapshotLike {
-  /** agent ID。 */
-  id: string;
-  /** 标题。 */
-  title?: string | null;
-  /** provider ID。 */
-  provider: string;
-  /** 工作目录。 */
-  cwd: string;
-  /** 生命周期状态。 */
-  status: string;
-  /** 模型 ID。 */
-  model?: string | null;
-  /** 当前模式 ID。 */
-  currentModeId?: string | null;
-  /** 更新时间。 */
-  updatedAt: string;
-  /** 归档时间。 */
-  archivedAt?: string | null;
-  /** 最近错误。 */
-  lastError?: string | null;
-}
-
 const EMPTY_STATE: PaseoViewState = {
   workspacePath: null,
   screen: "tasks",
@@ -128,15 +120,6 @@ const EMPTY_STATE: PaseoViewState = {
   busy: false,
   error: null,
 };
-
-const MIN_ALL_PROVIDER_CLIENT_VERSION = "0.1.45";
-const MOCK_PROVIDER_MODELS = [
-  { id: "five-minute-stream", label: "Five minute stream", isDefault: true },
-  { id: "thirty-minute-stream", label: "Thirty minute stream", isDefault: false },
-  { id: "one-minute-stream", label: "One minute stream", isDefault: false },
-  { id: "ten-second-stream", label: "Ten second stream", isDefault: false },
-];
-const MOCK_PROVIDER_MODES = [{ id: "load-test", label: "Load Test", isDefault: true }];
 
 /**
  * 维护扩展侧 Paseo 状态和 daemon 通信。
@@ -867,286 +850,4 @@ export class PaseoService {
   private log(message: string): void {
     this.config.log(message);
   }
-}
-
-/**
- * 探测 daemon 连接目标是否有进程监听。
- * @param target daemon 连接目标。
- * @param timeoutMs 探测超时时间。
- */
-function probeConnectionTarget(target: ConnectionTarget, timeoutMs: number): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const socket = target.socketPath
-      ? net.createConnection(target.socketPath)
-      : net.createConnection(readTcpConnectOptions(target));
-    let settled = false;
-    const finish = (error?: Error) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      socket.destroy();
-      if (error) {
-        reject(error);
-        return;
-      }
-      resolve();
-    };
-    const timer = setTimeout(() => finish(new Error(`daemon ${target.host} 探测超时`)), timeoutMs);
-    socket.once("connect", () => finish());
-    socket.once("error", (error) => finish(error));
-  });
-}
-
-/**
- * 读取 TCP 探测参数。
- * @param target daemon 连接目标。
- */
-function readTcpConnectOptions(target: ConnectionTarget): net.NetConnectOpts {
-  const parsed = new URL(target.url);
-  const port = Number(parsed.port || (parsed.protocol === "wss:" ? 443 : 80));
-  return {
-    host: parsed.hostname,
-    port,
-  };
-}
-
-/**
- * 解析发送给 daemon 的客户端协议版本。
- * @param extensionVersion VS Code 扩展版本。
- */
-function resolveClientAppVersion(extensionVersion: string): string {
-  if (isVersionAtLeast(extensionVersion, MIN_ALL_PROVIDER_CLIENT_VERSION)) {
-    return extensionVersion;
-  }
-  return MIN_ALL_PROVIDER_CLIENT_VERSION;
-}
-
-/**
- * 判断语义化版本是否不低于目标版本。
- * @param actual 当前版本。
- * @param minimum 最低版本。
- */
-function isVersionAtLeast(actual: string, minimum: string): boolean {
-  const actualParts = actual.replace(/-.*/, "").split(".").map((part) => Number(part));
-  const minimumParts = minimum.split(".").map((part) => Number(part));
-  for (let index = 0; index < minimumParts.length; index += 1) {
-    const left = actualParts[index] ?? 0;
-    const right = minimumParts[index] ?? 0;
-    if (!Number.isFinite(left) || left < right) return false;
-    if (left > right) return true;
-  }
-  return true;
-}
-
-/**
- * 创建 Node WebSocket。
- * @param url WebSocket URL。
- * @param options daemon client 透传选项。
- * @param target 连接目标。
- */
-function createWebSocket(
-  url: string,
-  options: { headers?: Record<string, string>; protocols?: string[] } | undefined,
-  target: ConnectionTarget,
-): WebSocketLike {
-  return new WebSocket(url, options?.protocols, {
-    headers: options?.headers,
-    ...(target.socketPath ? { socketPath: target.socketPath } : {}),
-  }) as unknown as WebSocketLike;
-}
-
-/**
- * 映射 agent 到 Webview 状态。
- * @param agent daemon agent 快照。
- */
-function mapAgent(agent: AgentSnapshotLike): AgentView {
-  return {
-    id: agent.id,
-    title: agent.title?.trim() || "New agent",
-    provider: agent.provider,
-    cwd: agent.cwd,
-    status: agent.status,
-    model: agent.model ?? null,
-    modeId: agent.currentModeId ?? null,
-    updatedAt: agent.updatedAt,
-    archivedAt: agent.archivedAt ?? null,
-    lastError: agent.lastError ?? null,
-  };
-}
-
-/**
- * 映射 provider 快照。
- * @param entry daemon provider 快照。
- */
-function mapProvider(entry: {
-  provider: string;
-  label?: string;
-  status: string;
-  error?: string;
-  models?: Array<{ id: string; label?: string; isDefault?: boolean }>;
-  modes?: Array<{ id: string; label?: string; isDefault?: boolean }>;
-  defaultModeId?: string | null;
-}): ProviderView {
-  const models =
-    entry.provider === "mock" && (entry.models ?? []).length === 0
-      ? MOCK_PROVIDER_MODELS
-      : (entry.models ?? []);
-  const modes =
-    entry.provider === "mock" && (entry.modes ?? []).length === 0
-      ? MOCK_PROVIDER_MODES
-      : (entry.modes ?? []);
-  return {
-    provider: entry.provider,
-    label: entry.label ?? entry.provider,
-    status: entry.status,
-    error: entry.error ?? null,
-    models: models.map((model) => ({
-      id: model.id,
-      label: model.label ?? model.id,
-      isDefault: model.isDefault === true,
-    })),
-    modes: modes.map((mode) => ({
-      id: mode.id,
-      label: mode.label ?? mode.id,
-      isDefault: mode.isDefault === true,
-    })),
-    defaultModeId: entry.defaultModeId ?? (entry.provider === "mock" ? "load-test" : null),
-  };
-}
-
-/**
- * 映射 timeline item。
- * @param item daemon timeline item 或 stream event。
- * @param timestamp item 时间戳。
- * @param idSeed 可选 ID 种子。
- */
-function mapTimelineEntry(item: unknown, timestamp?: string, idSeed?: string): TimelineItemView {
-  const record = isRecord(item) ? item : {};
-  const type = record.type;
-  const id = `${idSeed ?? timestamp ?? Date.now()}-${Math.random().toString(36).slice(2)}`;
-  if (type === "user_message") {
-    return { id, type: "user", title: "用户提示提交", text: readString(record.text), status: "completed", timestamp };
-  }
-  if (type === "assistant_message") {
-    return { id, type: "assistant", title: "Assistant", text: readString(record.text), timestamp };
-  }
-  if (type === "reasoning") {
-    return { id, type: "reasoning", title: "已处理", text: readString(record.text), collapsible: true, timestamp };
-  }
-  if (type === "error") {
-    return { id, type: "error", title: "错误", text: readString(record.message), status: "failed", timestamp };
-  }
-  if (type === "todo") {
-    const items = Array.isArray(record.items)
-      ? record.items.map((entry) => (isRecord(entry) ? `${entry.completed ? "[x]" : "[ ]"} ${entry.text}` : ""))
-      : [];
-    return { id, type: "todo", title: "待办", text: items.filter(Boolean).join("\n"), collapsible: true, timestamp };
-  }
-  if (type === "tool_call") {
-    return {
-      id,
-      type: "tool",
-      title: readString(record.name) || "工具调用",
-      text: `${readString(record.name) || "tool"} ${readString(record.status)}`.trim(),
-      status: readString(record.status),
-      collapsible: true,
-      timestamp,
-    };
-  }
-  if (typeof type === "string") {
-    return { id, type: "system", title: "系统事件", text: type, collapsible: true, timestamp };
-  }
-  return { id, type: "system", title: "系统事件", text: JSON.stringify(item), collapsible: true, timestamp };
-}
-
-/**
- * 从 stream 生命周期事件同步 agent 摘要状态。
- * @param event daemon stream 事件。
- * @param timestamp 事件时间戳。
- */
-function resolveAgentPatchFromStreamEvent(
-  event: Record<string, unknown>,
-  timestamp?: string,
-): Partial<AgentView> | null {
-  const type = readString(event.type);
-  const updatedAt = timestamp ?? new Date().toISOString();
-  if (type === "turn_started") {
-    return { status: "running", updatedAt };
-  }
-  if (type === "turn_completed" || type === "turn_failed" || type === "turn_canceled") {
-    const lastError = type === "turn_failed" ? readString(event.error) : null;
-    return { status: "idle", updatedAt, lastError };
-  }
-  if (type === "attention_required" && readString(event.reason) !== "permission") {
-    return { status: "idle", updatedAt };
-  }
-  if (type === "mode_changed") {
-    return { modeId: readNullableString(event.currentModeId), updatedAt };
-  }
-  if (type === "model_changed") {
-    const runtimeInfo = isRecord(event.runtimeInfo) ? event.runtimeInfo : {};
-    return { model: readNullableString(runtimeInfo.model), updatedAt };
-  }
-  return null;
-}
-
-/**
- * 更新 agent 列表。
- * @param agents 当前 agent 列表。
- * @param next 新 agent。
- * @param workspacePath 当前工作区路径。
- */
-function upsertAgent(agents: AgentView[], next: AgentView, workspacePath: string | null): AgentView[] {
-  if (workspacePath && next.cwd !== workspacePath) return agents;
-  const filtered = agents.filter((agent) => agent.id !== next.id);
-  return [next, ...filtered].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-}
-
-/**
- * 判断 agent 是否正在运行。
- * @param agent agent 摘要。
- */
-function isAgentRunning(agent: AgentView): boolean {
-  return agent.status === "running" || agent.status === "initializing";
-}
-
-/**
- * 判断 unknown 是否为 record。
- * @param value 待判断值。
- */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/**
- * 读取字符串字段。
- * @param value 待读取值。
- */
-function readString(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
-
-/**
- * 读取可空字符串字段。
- * @param value 待读取值。
- */
-function readNullableString(value: unknown): string | null {
-  return typeof value === "string" ? value : null;
-}
-
-/**
- * 归一化错误消息。
- * @param error 待展示错误。
- */
-function errorToMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-/**
- * 隐藏 host 中的 password 查询参数。
- * @param host daemon host。
- */
-function maskHostForLog(host: string): string {
-  if (!host.includes("password=")) return host;
-  return host.replace(/([?&]password=)[^&]+/g, "$1***");
 }
