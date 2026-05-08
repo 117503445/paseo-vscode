@@ -18,6 +18,8 @@ export class ComposerController {
   private providerTouched = false;
   private modelTouched = false;
   private modeTouched = false;
+  private pendingText: string | null = null;
+  private pendingSawBusy = false;
 
   /**
    * 创建 composer 控制器。
@@ -36,6 +38,7 @@ export class ComposerController {
    * @param nextState 当前视图状态。
    */
   syncDefaults(nextState: PaseoViewState): void {
+    this.syncPendingSend(nextState);
     if (nextState.selectedAgent) {
       this.provider = nextState.selectedAgent.provider;
       this.model = nextState.selectedAgent.model ?? nextState.composerDefaults.model;
@@ -103,7 +106,10 @@ export class ComposerController {
     const send = this.root.querySelector<HTMLButtonElement>('[data-testid="paseo-composer-send"]');
     if (!send) return;
     send.disabled =
-      nextState.daemon.status !== "connected" || nextState.busy || this.draft.trim().length === 0;
+      nextState.daemon.status !== "connected" ||
+      nextState.busy ||
+      this.pendingText !== null ||
+      this.draft.trim().length === 0;
   }
 
   /**
@@ -133,6 +139,7 @@ export class ComposerController {
     submit.disabled =
       nextState.daemon.status !== "connected" ||
       nextState.busy ||
+      this.pendingText !== null ||
       (!running && this.draft.trim().length === 0);
     controls.append(menu, providerSelect, modeSelect, modelSelect, submit);
     return controls;
@@ -260,10 +267,29 @@ export class ComposerController {
       planMode: this.planMode,
     };
     if (!payload.text) return;
+    this.pendingText = payload.text;
+    this.pendingSawBusy = false;
     this.post({ type: "sendComposer", input: payload });
-    this.draft = "";
-    input.value = "";
     this.menuOpen = false;
+    this.rerender(nextState);
+  }
+
+  /**
+   * 根据 Extension Host 回包确认是否清空待发送草稿。
+   * @param nextState 当前视图状态。
+   */
+  private syncPendingSend(nextState: PaseoViewState): void {
+    if (this.pendingText === null) return;
+    if (nextState.busy) {
+      this.pendingSawBusy = true;
+      return;
+    }
+    if (!this.pendingSawBusy) return;
+    if (!nextState.error && this.draft.trim() === this.pendingText) {
+      this.draft = "";
+    }
+    this.pendingText = null;
+    this.pendingSawBusy = false;
   }
 
   /**

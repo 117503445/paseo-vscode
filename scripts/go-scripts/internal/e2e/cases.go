@@ -41,6 +41,15 @@ func runCase(ctx context.Context, page playwright.Page, baseURL string, name str
 			return err
 		}
 		return createChatWithDefaultReadyProvider(frame)
+	case "composer-preserves-draft-on-error":
+		frame, err := openPaseoView(page)
+		if err != nil {
+			return err
+		}
+		if err := expectText(frame.Locator(`[data-testid="paseo-daemon-status"]`), "已连接", 60*time.Second); err != nil {
+			return err
+		}
+		return expectComposerPreservesDraftOnError(frame)
 	case "codex-like-ux":
 		frame, err := openPaseoView(page)
 		if err != nil {
@@ -166,6 +175,27 @@ func createChatWithDefaultReadyProvider(frame playwright.Frame) error {
 	return frame.Locator(`[data-testid="paseo-message-assistant"]`).First().WaitFor(playwright.LocatorWaitForOptions{
 		Timeout: playwright.Float(60_000),
 	})
+}
+
+// expectComposerPreservesDraftOnError 断言发送失败后保留 composer 草稿。
+// frame 是 Paseo webview frame。
+func expectComposerPreservesDraftOnError(frame playwright.Frame) error {
+	message := "这条消息应该失败但保留"
+	if err := selectSyntheticOption(frame.Locator(`[data-testid="paseo-composer-provider"]`), "broken-provider", "Broken Provider"); err != nil {
+		return err
+	}
+	if err := frame.Locator(`[data-testid="paseo-composer-input"]`).Fill(message); err != nil {
+		return err
+	}
+	if err := frame.Locator(`[data-testid="paseo-composer-send"]`).Click(); err != nil {
+		return err
+	}
+	if err := frame.Locator(`[data-testid="paseo-error"]`).WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(30_000),
+	}); err != nil {
+		return err
+	}
+	return expectInputValue(frame.Locator(`[data-testid="paseo-composer-input"]`), message, 10*time.Second)
 }
 
 // expectCodexLikeUX 断言 Paseo 具备 Codex 风格任务交互。
