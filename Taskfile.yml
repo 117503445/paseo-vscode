@@ -1,0 +1,25 @@
+version: "3"
+
+dotenv: [".env"]
+
+includes:
+  test:
+    taskfile: ./scripts/tasks/test
+
+tasks:
+  build:
+    desc: "构建 VS Code 扩展"
+    cmds:
+      - npm run compile
+
+  test:
+    desc: "运行所有测试"
+    cmds:
+      - task: test:all
+
+  e2e:
+    desc: "运行 E2E 测试"
+    cmds:
+      - task: test:e2e
+        vars:
+          CLI_ARGS: "{{.CLI_ARGS}}"

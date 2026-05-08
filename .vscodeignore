@@ -1,0 +1,13 @@
+.git/**
+.github/**
+data/**
+docker/**
+scripts/**
+src/**
+test/**
+*.tsbuildinfo
+vitest.config.ts
+tsconfig.json
+go.mod
+go.sum
+Taskfile.yml

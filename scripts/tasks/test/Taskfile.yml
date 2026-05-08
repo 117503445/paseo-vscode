@@ -1,0 +1,20 @@
+version: "3"
+
+tasks:
+  all:
+    desc: "运行所有测试"
+    cmds:
+      - task: ut
+      - task: e2e
+
+  ut:
+    desc: "运行单元测试"
+    cmds:
+      - mkdir -p ./data/ut
+      - bash -lc 'set -o pipefail; npm test 2>&1 | tee ./data/ut/test.log'
+
+  e2e:
+    desc: "运行 E2E 测试"
+    cmds:
+      - mkdir -p ./data/e2e
+      - bash -lc 'set -o pipefail; go run ./scripts/go-scripts e2e {{.CLI_ARGS}} 2>&1 | tee ./data/e2e/test.log'

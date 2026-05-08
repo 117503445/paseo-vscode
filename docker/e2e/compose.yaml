@@ -1,0 +1,63 @@
+services:
+  code-server:
+    build:
+      context: ../..
+      dockerfile: docker/e2e/code-server.Dockerfile
+    environment:
+      PASSWORD: paseo-e2e
+      PASEO_HOME: /tmp/paseo-home
+      PASEO_NODE_ENV: development
+      PASEO_RELAY_ENABLED: "0"
+      PASEO_DICTATION_ENABLED: "0"
+      PASEO_VOICE_MODE_ENABLED: "0"
+      PASEO_LOCAL_SPEECH_AUTO_DOWNLOAD: "0"
+      PASEO_LISTEN: 127.0.0.1:6767
+    entrypoint:
+      - /usr/bin/entrypoint.sh
+    command:
+      - --bind-addr
+      - 0.0.0.0:8080
+      - --auth
+      - password
+      - /workspace/project
+    networks:
+      - e2e
+
+  code-server-no-folder:
+    build:
+      context: ../..
+      dockerfile: docker/e2e/code-server.Dockerfile
+    environment:
+      PASSWORD: paseo-e2e
+      PASEO_HOME: /tmp/paseo-home
+      PASEO_NODE_ENV: development
+      PASEO_RELAY_ENABLED: "0"
+      PASEO_DICTATION_ENABLED: "0"
+      PASEO_VOICE_MODE_ENABLED: "0"
+      PASEO_LOCAL_SPEECH_AUTO_DOWNLOAD: "0"
+      PASEO_LISTEN: 127.0.0.1:6767
+    entrypoint:
+      - /usr/bin/entrypoint.sh
+    command:
+      - --bind-addr
+      - 0.0.0.0:8080
+      - --auth
+      - password
+    networks:
+      - e2e
+
+  e2e-runner:
+    build:
+      context: ../..
+      dockerfile: docker/e2e/playwright.Dockerfile
+    environment:
+      PASEO_E2E_INSIDE_RUNNER: "1"
+      PASEO_E2E_ARTIFACT_DIR: /tmp/paseo-vscode-e2e
+    volumes:
+      - ../../data/e2e:/tmp/paseo-vscode-e2e
+    networks:
+      - e2e
+
+networks:
+  e2e:
+    internal: true

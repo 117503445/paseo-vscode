@@ -1,0 +1,124 @@
+{
+  "name": "paseo-vscode",
+  "displayName": "Paseo",
+  "description": "在 VS Code 和 code-server 中使用 Paseo agent 会话。",
+  "version": "0.0.1",
+  "publisher": "getpaseo",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/getpaseo/paseo-vscode.git"
+  },
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "paseo",
+    "agent",
+    "ai",
+    "code-server"
+  ],
+  "activationEvents": [
+    "onView:paseo.chat",
+    "onCommand:paseo.newAgent",
+    "onCommand:paseo.refresh",
+    "onCommand:paseo.reconnectDaemon",
+    "onCommand:paseo.showDaemonStatus"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "paseo",
+          "title": "Paseo",
+          "icon": "resources/paseo.svg"
+        }
+      ]
+    },
+    "views": {
+      "paseo": [
+        {
+          "id": "paseo.chat",
+          "name": "Chat",
+          "type": "webview"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "paseo.newAgent",
+        "title": "Paseo: New Agent"
+      },
+      {
+        "command": "paseo.refresh",
+        "title": "Paseo: Refresh"
+      },
+      {
+        "command": "paseo.reconnectDaemon",
+        "title": "Paseo: Reconnect Daemon"
+      },
+      {
+        "command": "paseo.showDaemonStatus",
+        "title": "Paseo: Show Daemon Status"
+      }
+    ],
+    "configuration": {
+      "title": "Paseo",
+      "properties": {
+        "paseo.daemon.host": {
+          "type": "string",
+          "default": "",
+          "description": "Paseo daemon 连接目标。为空时按 PASEO_HOST、PASEO_HOME/paseo.pid、配置文件和 localhost:6767 推导。"
+        },
+        "paseo.daemon.startTimeoutMs": {
+          "type": "number",
+          "default": 30000,
+          "minimum": 1000,
+          "description": "启动并等待本地 Paseo daemon 可连接的超时时间。"
+        },
+        "paseo.agent.defaultProvider": {
+          "type": "string",
+          "default": "",
+          "description": "默认 agent provider。为空时使用第一个 ready provider。"
+        },
+        "paseo.agent.defaultModel": {
+          "type": "string",
+          "default": "",
+          "description": "默认 agent model。为空时使用 provider 的默认模型。"
+        },
+        "paseo.agent.defaultMode": {
+          "type": "string",
+          "default": "",
+          "description": "默认 agent mode。为空时使用 provider 的默认模式。"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "npm run build:extension && npm run build:webview",
+    "build:extension": "esbuild src/extension.ts --bundle --platform=node --format=cjs --outfile=dist/extension.js --external:vscode --packages=external --sourcemap",
+    "build:webview": "esbuild src/webview/app.ts --bundle --platform=browser --format=iife --outfile=dist/webview/app.js --sourcemap",
+    "compile": "npm run typecheck && npm run build",
+    "package:vsix": "npm run compile && vsce package --out dist/paseo-vscode.vsix",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "watch": "npm run build"
+  },
+  "dependencies": {
+    "@getpaseo/server": "0.1.69",
+    "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/vscode": "^1.95.0",
+    "@types/ws": "^8.5.13",
+    "@vscode/vsce": "^3.2.2",
+    "esbuild": "^0.24.2",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
