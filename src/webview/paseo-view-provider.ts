@@ -68,14 +68,19 @@ export class PaseoViewProvider implements vscode.WebviewViewProvider {
    */
   async createAgentFromCommand(): Promise<void> {
     const state = this.service.getState();
-    const provider = state.providers.find((entry) => entry.status === "ready")?.provider ?? "codex";
+    const defaults = state.composerDefaults;
     const prompt = await vscode.window.showInputBox({
       title: "Paseo: New Agent",
       prompt: "输入初始消息",
       ignoreFocusOut: true,
     });
     if (!prompt?.trim()) return;
-    await this.service.createAgent({ provider, text: prompt.trim() });
+    await this.service.createAgent({
+      text: prompt.trim(),
+      provider: defaults.provider || undefined,
+      model: defaults.model || undefined,
+      modeId: defaults.modeId || undefined,
+    });
     this.postState();
   }
 
