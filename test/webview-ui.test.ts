@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import type { AgentView, PaseoViewState, ProviderView } from "../src/paseo/types";
 import { buildComposerProviderPickerOptions } from "../src/webview/composer";
-import { buildSelectDisplayOptions } from "../src/webview/dom";
+import { buildSelectDisplayOptions, iconButton, type PaseoIconName } from "../src/webview/dom";
 import { renderMarkdownToHtml } from "../src/webview/markdown";
 import { formatAgentRuntimeLabel, listVisibleTasks } from "../src/webview/tasks";
 
@@ -60,6 +60,76 @@ const baseState: PaseoViewState = {
   busy: false,
   error: null,
 };
+
+class FakeElementNode {
+  className = "";
+  textContent = "";
+  title = "";
+  type = "";
+  disabled = false;
+  readonly children: FakeElementNode[] = [];
+  readonly dataset: Record<string, string> = {};
+  private readonly attributes = new Map<string, string>();
+  private readonly listeners = new Map<string, unknown[]>();
+
+  /**
+   * 创建单测用假元素。
+   * @param tagName 元素标签名。
+   */
+  constructor(readonly tagName: string) {}
+
+  /**
+   * 追加子节点。
+   * @param nodes 子节点列表。
+   */
+  append(...nodes: FakeElementNode[]): void {
+    this.children.push(...nodes);
+  }
+
+  /**
+   * 写入元素属性。
+   * @param name 属性名。
+   * @param value 属性值。
+   */
+  setAttribute(name: string, value: string): void {
+    this.attributes.set(name, value);
+  }
+
+  /**
+   * 读取元素属性。
+   * @param name 属性名。
+   */
+  getAttribute(name: string): string | null {
+    return this.attributes.get(name) ?? null;
+  }
+
+  /**
+   * 记录事件监听器。
+   * @param type 事件类型。
+   * @param listener 监听函数。
+   */
+  addEventListener(type: string, listener: unknown): void {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+  }
+}
+
+/**
+ * 安装最小 DOM mock 并执行断言。
+ * @param run 断言回调。
+ */
+function withFakeDocument(run: () => void): void {
+  const originalDocument = globalThis.document;
+  const fakeDocument = {
+    createElement: (tagName: string) => new FakeElementNode(tagName),
+    createElementNS: (_namespace: string, tagName: string) => new FakeElementNode(tagName),
+  } as unknown as Document;
+  Object.defineProperty(globalThis, "document", { value: fakeDocument, configurable: true });
+  try {
+    run();
+  } finally {
+    Object.defineProperty(globalThis, "document", { value: originalDocument, configurable: true });
+  }
+}
 
 describe("webview user visible ui", () => {
   test("task list always shows every task without search or status filtering", () => {
@@ -129,5 +199,30 @@ describe("webview user visible ui", () => {
     expect(label).toBe("codex · idle");
     expect(label).not.toContain(" - ");
     expect(label).not.toBe("-");
+  });
+
+  test("codex style icon buttons expose title and aria label", () => {
+    const keyButtons: Array<[PaseoIconName, string]> = [
+      ["settings", "设置"],
+      ["refresh", "刷新"],
+      ["new-task", "新任务"],
+      ["back", "返回任务"],
+      ["send", "发送"],
+      ["stop", "停止"],
+      ["add", "添加附件和上下文"],
+      ["archive", "归档任务"],
+      ["copy", "复制"],
+    ];
+
+    withFakeDocument(() => {
+      for (const [icon, label] of keyButtons) {
+        const target = iconButton(icon, label, () => undefined);
+
+        expect(target.title).toBe(label);
+        expect(target.getAttribute("aria-label")).toBe(label);
+        expect(target.textContent).toBe("");
+        expect(target.children[0]?.getAttribute("aria-hidden")).toBe("true");
+      }
+    });
   });
 });

@@ -87,7 +87,7 @@ function renderProcessingGroup(agent: AgentView): HTMLElement {
  */
 function renderMessageActions(item: TimelineItemView): HTMLElement {
   const actions = el("div", "message-actions");
-  actions.append(iconButton("⧉", "复制", () => void navigator.clipboard?.writeText(item.text)));
+  actions.append(iconButton("copy", "复制", () => void navigator.clipboard?.writeText(item.text)));
   return actions;
 }
 

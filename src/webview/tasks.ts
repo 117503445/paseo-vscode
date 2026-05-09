@@ -46,7 +46,7 @@ function renderTaskItem(agent: AgentView, post: PostMessage): HTMLElement {
   const side = el("div", "task-side");
   side.append(el("div", "muted", formatRelativeTime(agent.updatedAt)));
   if (!agent.archivedAt) {
-    const archive = iconButton("×", "归档任务", (event) => {
+    const archive = iconButton("archive", "归档任务", (event) => {
       event.stopPropagation();
       post({ type: "archiveAgent", agentId: agent.id });
     });

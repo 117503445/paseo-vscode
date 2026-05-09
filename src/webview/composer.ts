@@ -127,19 +127,19 @@ export class ComposerController {
     const providerSelect = this.renderProviderSelect(nextState);
     const modelSelect = this.renderModelSelect(nextState);
     const modeSelect = this.renderModeSelect(nextState);
-    const menu = iconButton("+", "添加附件和上下文", () => {
+    const menu = iconButton("add", "添加附件和上下文", () => {
       this.menuOpen = !this.menuOpen;
       this.rerender(nextState);
     });
     menu.dataset.testid = "paseo-composer-menu";
     const running = Boolean(nextState.selectedAgent && isAgentRunning(nextState.selectedAgent));
     const submit = running
-      ? iconButton("■", "停止", () => {
+      ? iconButton("stop", "停止", () => {
           if (nextState.selectedAgentId) {
             this.post({ type: "cancelAgent", agentId: nextState.selectedAgentId });
           }
         })
-      : iconButton("↑", "发送", () => this.send(nextState, input));
+      : iconButton("send", "发送", () => this.send(nextState, input));
     submit.dataset.testid = running ? "paseo-composer-stop" : "paseo-composer-send";
     submit.disabled =
       nextState.daemon.status !== "connected" ||

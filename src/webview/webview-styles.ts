@@ -156,8 +156,17 @@ export const WEBVIEW_STYLES = /* css */ `
     height: 28px;
     padding: 0;
     border-radius: 7px;
-    font-size: 14px;
     line-height: 1;
+  }
+  .paseo-icon {
+    display: block;
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+    pointer-events: none;
+  }
+  .paseo-icon path {
+    vector-effect: non-scaling-stroke;
   }
   .count-button {
     width: auto;

@@ -3,6 +3,33 @@ import type { AgentView, PaseoViewState, SelectOptionView, WebviewToExtensionMes
 /** 向 Extension Host 发送 Webview 消息。 */
 export type PostMessage = (message: WebviewToExtensionMessage) => void;
 
+/** Webview 本地图标名称。 */
+export type PaseoIconName = "add" | "archive" | "back" | "copy" | "new-task" | "refresh" | "send" | "settings" | "stop";
+
+type IconSegment = {
+  d: string;
+  fill?: boolean;
+};
+
+const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+
+const PASEO_ICON_PATHS: Record<PaseoIconName, IconSegment[]> = {
+  add: [{ d: "M8 3.5v9M3.5 8h9" }],
+  archive: [{ d: "M4.5 4.5l7 7M11.5 4.5l-7 7" }],
+  back: [{ d: "M9.5 3.5 5 8l4.5 4.5M5.5 8h8" }],
+  copy: [{ d: "M6 2.5h7.5V10M2.5 6h7.5v7.5H2.5z" }],
+  "new-task": [{ d: "M3.5 2.5h5l4 4v7h-9zM8.5 2.5v4h4M6 10h4M8 8v4" }],
+  refresh: [{ d: "M13.5 4.5V1.8h-2.7M12.9 2.2A5.5 5.5 0 0 0 3 4.4M2.5 11.5v2.7h2.7M3.1 13.8A5.5 5.5 0 0 0 13 11.6" }],
+  send: [{ d: "M8 13V3M4.5 6.5 8 3l3.5 3.5" }],
+  settings: [
+    {
+      d: "M6.8 1.5h2.4l.35 1.4c.38.13.75.3 1.08.5l1.25-.74 1.7 1.7-.74 1.25c.2.33.37.7.5 1.08l1.4.35v2.4l-1.4.35c-.13.38-.3.75-.5 1.08l.74 1.25-1.7 1.7-1.25-.74c-.33.2-.7.37-1.08.5l-.35 1.4H6.8l-.35-1.4a5.6 5.6 0 0 1-1.08-.5l-1.25.74-1.7-1.7.74-1.25a5.6 5.6 0 0 1-.5-1.08l-1.4-.35v-2.4l1.4-.35c.13-.38.3-.75.5-1.08l-.74-1.25 1.7-1.7 1.25.74c.33-.2.7-.37 1.08-.5z",
+    },
+    { d: "M8 5.8a2.2 2.2 0 1 0 0 4.4 2.2 2.2 0 0 0 0-4.4z" },
+  ],
+  stop: [{ d: "M5 5h6v6H5z", fill: true }],
+};
+
 /**
  * 创建 select。
  * @param options 选项。
@@ -79,14 +106,44 @@ export function button(text: string, title: string, onClick: (event: MouseEvent)
 
 /**
  * 创建图标按钮。
- * @param text 按钮文本。
+ * @param icon 图标名称。
  * @param title tooltip。
  * @param onClick 点击处理函数。
  */
-export function iconButton(text: string, title: string, onClick: (event: MouseEvent) => void): HTMLButtonElement {
-  const target = button(text, title, onClick);
+export function iconButton(icon: PaseoIconName, title: string, onClick: (event: MouseEvent) => void): HTMLButtonElement {
+  const target = button("", title, onClick);
   target.className = "icon-button";
+  target.setAttribute("aria-label", title);
+  target.append(renderIcon(icon));
   return target;
+}
+
+/**
+ * 创建本地 SVG 图标。
+ * @param icon 图标名称。
+ */
+function renderIcon(icon: PaseoIconName): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NAMESPACE, "svg");
+  svg.setAttribute("class", "paseo-icon");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  for (const segment of PASEO_ICON_PATHS[icon]) {
+    const path = document.createElementNS(SVG_NAMESPACE, "path");
+    path.setAttribute("d", segment.d);
+    if (segment.fill) {
+      path.setAttribute("fill", "currentColor");
+      path.setAttribute("stroke", "none");
+    } else {
+      path.setAttribute("fill", "none");
+      path.setAttribute("stroke", "currentColor");
+      path.setAttribute("stroke-width", "1.45");
+      path.setAttribute("stroke-linecap", "round");
+      path.setAttribute("stroke-linejoin", "round");
+    }
+    svg.append(path);
+  }
+  return svg;
 }
 
 /**

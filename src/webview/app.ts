@@ -44,7 +44,7 @@ function renderHeader(nextState: PaseoViewState): HTMLElement {
   const section = el("section", nextState.screen === "thread" ? "topbar thread-topbar" : "topbar task-topbar");
   section.dataset.testid = "paseo-status";
   if (nextState.screen === "thread" && nextState.selectedAgent) {
-    const back = iconButton("‹", "返回任务", () => post({ type: "backToTasks" }));
+    const back = iconButton("back", "返回任务", () => post({ type: "backToTasks" }));
     back.dataset.testid = "paseo-back-to-tasks";
     const title = button(nextState.selectedAgent.title, "当前任务", () => undefined);
     title.className = "title-button";
@@ -99,9 +99,9 @@ function renderRunningCount(nextState: PaseoViewState): HTMLElement {
 function renderTopActions(): HTMLElement {
   const actions = el("div", "top-actions");
   actions.append(
-    iconButton("↻", "刷新", () => post({ type: "refresh" })),
-    iconButton("⚙", "设置", () => post({ type: "openSettings" })),
-    iconButton("✎", "新任务", () => post({ type: "backToTasks" })),
+    iconButton("refresh", "刷新", () => post({ type: "refresh" })),
+    iconButton("settings", "设置", () => post({ type: "openSettings" })),
+    iconButton("new-task", "新任务", () => post({ type: "backToTasks" })),
   );
   return actions;
 }
