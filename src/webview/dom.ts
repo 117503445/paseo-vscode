@@ -7,15 +7,59 @@ export type PostMessage = (message: WebviewToExtensionMessage) => void;
  * 创建 select。
  * @param options 选项。
  * @param value 当前值。
+ * @param placeholderLabel 缺省选项文案。
  */
-export function createSelect(options: SelectOptionView[], value: string): HTMLSelectElement {
+export function createSelect(
+  options: SelectOptionView[],
+  value: string,
+  placeholderLabel: string,
+): HTMLSelectElement {
   const target = document.createElement("select");
-  target.append(new Option("-", ""));
-  for (const option of options) {
-    target.append(new Option(option.label, option.id, option.id === value, option.id === value));
+  const displayOptions = buildSelectDisplayOptions(options, value, placeholderLabel);
+  const selectedValue = displayOptions.some((option) => option.id === value) ? value : "";
+  for (const option of displayOptions) {
+    target.append(new Option(option.label, option.id, option.id === selectedValue, option.id === selectedValue));
   }
-  target.value = value;
+  target.value = selectedValue;
   return target;
+}
+
+/**
+ * 构造用户可见的 select 选项。
+ * @param options 原始选项。
+ * @param value 当前值。
+ * @param placeholderLabel 缺省选项文案。
+ */
+export function buildSelectDisplayOptions(
+  options: SelectOptionView[],
+  value: string,
+  placeholderLabel: string,
+): SelectOptionView[] {
+  const selectedValue = value.trim() === "-" ? "" : value;
+  const normalizedOptions = options.map((option) => ({
+    ...option,
+    label: normalizeSelectOptionLabel(option, placeholderLabel),
+  }));
+  if (!selectedValue) {
+    return [{ id: "", label: placeholderLabel, isDefault: false }, ...normalizedOptions.filter((option) => option.id)];
+  }
+  if (normalizedOptions.some((option) => option.id === selectedValue)) {
+    return normalizedOptions;
+  }
+  return [{ id: selectedValue, label: selectedValue, isDefault: false }, ...normalizedOptions];
+}
+
+/**
+ * 归一化 select 选项文案。
+ * @param option 原始选项。
+ * @param fallbackLabel 兜底文案。
+ */
+function normalizeSelectOptionLabel(option: SelectOptionView, fallbackLabel: string): string {
+  const label = option.label.trim();
+  if (label && label !== "-") return label;
+  const id = option.id.trim();
+  if (id && id !== "-") return id;
+  return fallbackLabel;
 }
 
 /**

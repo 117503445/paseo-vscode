@@ -158,10 +158,10 @@ export class ComposerController {
    */
   private renderProviderSelect(nextState: PaseoViewState): HTMLSelectElement {
     const providers = this.renderableProviders(nextState);
-    const select = createSelect(buildComposerProviderPickerOptions(providers), this.provider);
+    const select = createSelect(buildComposerProviderPickerOptions(providers), this.provider, "选择 Provider");
     select.dataset.testid = "paseo-composer-provider";
     select.title = "Provider";
-    select.disabled = Boolean(nextState.selectedAgentId);
+    select.disabled = Boolean(nextState.selectedAgentId) || providers.length === 0;
     select.addEventListener("change", () => {
       this.providerTouched = true;
       this.provider = select.value;
@@ -180,9 +180,11 @@ export class ComposerController {
    */
   private renderModelSelect(nextState: PaseoViewState): HTMLSelectElement {
     const provider = this.findProvider(nextState);
-    const select = createSelect(provider?.models ?? [], this.model);
+    const options = provider?.models ?? [];
+    const select = createSelect(options, this.model, "使用默认模型");
     select.dataset.testid = "paseo-composer-model";
     select.title = "模型";
+    select.disabled = options.length === 0 && !this.model;
     select.addEventListener("change", () => {
       this.modelTouched = true;
       this.model = select.value;
@@ -199,9 +201,11 @@ export class ComposerController {
    */
   private renderModeSelect(nextState: PaseoViewState): HTMLSelectElement {
     const provider = this.findProvider(nextState);
-    const select = createSelect(provider?.modes ?? [], this.mode);
+    const options = provider?.modes ?? [];
+    const select = createSelect(options, this.mode, "使用默认模式");
     select.dataset.testid = "paseo-composer-mode";
     select.title = "思考强度";
+    select.disabled = options.length === 0 && !this.mode;
     select.addEventListener("change", () => {
       this.modeTouched = true;
       this.mode = select.value;

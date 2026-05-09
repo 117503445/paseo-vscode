@@ -1,8 +1,9 @@
 import { describe, expect, test } from "vitest";
 import type { AgentView, PaseoViewState, ProviderView } from "../src/paseo/types";
 import { buildComposerProviderPickerOptions } from "../src/webview/composer";
+import { buildSelectDisplayOptions } from "../src/webview/dom";
 import { renderMarkdownToHtml } from "../src/webview/markdown";
-import { listVisibleTasks } from "../src/webview/tasks";
+import { formatAgentRuntimeLabel, listVisibleTasks } from "../src/webview/tasks";
 
 const baseAgent: AgentView = {
   id: "agent-base",
@@ -111,5 +112,22 @@ describe("webview user visible ui", () => {
       { id: "codex", label: "Codex", isDefault: false },
       { id: "claude", label: "Claude", isDefault: false },
     ]);
+  });
+
+  test("composer missing selections use natural placeholders instead of dash", () => {
+    const modelOptions = buildSelectDisplayOptions([], "", "使用默认模型");
+    const modeOptions = buildSelectDisplayOptions([], "", "使用默认模式");
+
+    expect(modelOptions).toEqual([{ id: "", label: "使用默认模型", isDefault: false }]);
+    expect(modeOptions).toEqual([{ id: "", label: "使用默认模式", isDefault: false }]);
+    expect([...modelOptions, ...modeOptions].map((option) => option.label)).not.toContain("-");
+  });
+
+  test("task agent runtime label hides missing model without dash separator", () => {
+    const label = formatAgentRuntimeLabel({ ...baseAgent, provider: "codex", model: null, status: "idle" });
+
+    expect(label).toBe("codex · idle");
+    expect(label).not.toContain(" - ");
+    expect(label).not.toBe("-");
   });
 });

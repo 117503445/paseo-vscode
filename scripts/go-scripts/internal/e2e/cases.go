@@ -556,6 +556,9 @@ func expectCodexLikeUX(frame playwright.Frame) error {
 	if err := expectCodexLikeVisualChrome(frame); err != nil {
 		return err
 	}
+	if err := expectComposerSelectsWithoutDashPlaceholder(frame); err != nil {
+		return err
+	}
 	if err := selectOptionWhenAvailable(frame.Locator(`[data-testid="paseo-composer-provider"]`), "mock", 30*time.Second); err != nil {
 		return err
 	}
@@ -691,6 +694,49 @@ func expectCodexLikeVisualChrome(frame playwright.Frame) error {
 		return err
 	}
 	return expectBorderRadiusAtLeast(frame.Locator(`.composer-panel`).First(), "composer 面板", 14)
+}
+
+// expectComposerSelectsWithoutDashPlaceholder 断言 composer 选择框没有短横线占位。
+// frame 是 Paseo webview frame。
+func expectComposerSelectsWithoutDashPlaceholder(frame playwright.Frame) error {
+	controls := []struct {
+		selector string
+		label    string
+	}{
+		{`[data-testid="paseo-composer-provider"]`, "provider 选择器"},
+		{`[data-testid="paseo-composer-model"]`, "模型选择器"},
+		{`[data-testid="paseo-composer-mode"]`, "模式选择器"},
+	}
+	for _, control := range controls {
+		if err := expectSelectWithoutDashPlaceholder(frame.Locator(control.selector), control.label); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// expectSelectWithoutDashPlaceholder 断言单个选择框不包含短横线占位。
+// locator 是待检查选择框。
+// label 是错误提示中的控件名称。
+func expectSelectWithoutDashPlaceholder(locator playwright.Locator, label string) error {
+	value, err := locator.Evaluate(`element => Array.from(element.options).map(option => option.textContent.trim())`, nil)
+	if err != nil {
+		return fmt.Errorf("读取 %s 选项失败：%w", label, err)
+	}
+	options, ok := value.([]interface{})
+	if !ok {
+		return fmt.Errorf("%s 选项格式异常：%v", label, value)
+	}
+	for _, option := range options {
+		text, ok := option.(string)
+		if !ok {
+			return fmt.Errorf("%s 选项不是文本：%v", label, option)
+		}
+		if text == "-" {
+			return fmt.Errorf("%s 不应展示短横线占位", label)
+		}
+	}
+	return nil
 }
 
 // expectCodexLikeProcessingStyle 断言处理中详情使用紧凑圆角样式。

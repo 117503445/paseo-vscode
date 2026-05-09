@@ -42,7 +42,7 @@ function renderTaskItem(agent: AgentView, post: PostMessage): HTMLElement {
   item.dataset.agentId = agent.id;
   item.innerHTML = "";
   const main = el("div", "task-main");
-  main.append(el("div", "task-title", agent.title), el("div", "muted", `${agent.provider} · ${agent.status}`));
+  main.append(el("div", "task-title", agent.title), el("div", "muted", formatAgentRuntimeLabel(agent)));
   const side = el("div", "task-side");
   side.append(el("div", "muted", formatRelativeTime(agent.updatedAt)));
   if (!agent.archivedAt) {
@@ -55,4 +55,22 @@ function renderTaskItem(agent: AgentView, post: PostMessage): HTMLElement {
   }
   item.append(main, side);
   return item;
+}
+
+/**
+ * 格式化任务中的 agent 运行信息。
+ * @param agent agent 摘要。
+ */
+export function formatAgentRuntimeLabel(agent: AgentView): string {
+  const parts = [agent.provider, agent.model, agent.status].map(readVisibleAgentPart).filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : "任务信息待同步";
+}
+
+/**
+ * 读取可展示的 agent 信息片段。
+ * @param value 原始片段。
+ */
+function readVisibleAgentPart(value: string | null): string {
+  const text = value?.trim() ?? "";
+  return text && text !== "-" ? text : "";
 }
