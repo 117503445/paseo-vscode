@@ -164,12 +164,12 @@ export const WEBVIEW_STYLES = /* css */ `
     min-height: 0;
   }
   .timeline {
-    padding: 10px;
+    padding: 10px 10px 14px;
   }
   .message {
     display: grid;
-    gap: 6px;
-    margin-bottom: 12px;
+    gap: 5px;
+    margin-bottom: 14px;
   }
   .message-label {
     color: var(--vscode-descriptionForeground);
@@ -187,28 +187,38 @@ export const WEBVIEW_STYLES = /* css */ `
   .message-text {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-    line-height: 1.45;
+    line-height: 1.5;
   }
   .message-actions {
     display: flex;
+    justify-content: flex-start;
     gap: 4px;
+    margin-top: 2px;
   }
   .processing {
-    margin: 8px 0 12px;
+    margin: 4px 0 6px;
+    padding-left: 8px;
+    border-left: 1px solid var(--vscode-input-border, transparent);
     color: var(--vscode-descriptionForeground);
   }
   .processing summary {
     cursor: pointer;
+    min-height: 22px;
+    line-height: 22px;
   }
   .processing-body {
-    margin: 6px 0 0;
+    margin: 3px 0 6px;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     color: var(--vscode-foreground);
     font-family: var(--vscode-font-family);
+    font-size: 12px;
   }
   .error-block {
     color: var(--vscode-errorForeground);
+  }
+  .live-processing {
+    border-left-style: dashed;
   }
   .empty {
     padding: 18px 10px;

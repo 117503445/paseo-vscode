@@ -81,12 +81,20 @@ export interface TimelineItemView {
   id: string;
   /** item 类型。 */
   type: "user" | "assistant" | "reasoning" | "tool" | "todo" | "error" | "system";
+  /** provider ID。 */
+  provider?: string;
   /** 标题。 */
   title?: string;
   /** 正文。 */
   text: string;
   /** 执行状态。 */
   status?: string;
+  /** 工具调用 ID。 */
+  callId?: string;
+  /** 起始 timeline seq。 */
+  seqStart?: number;
+  /** 结束 timeline seq。 */
+  seqEnd?: number;
   /** 耗时毫秒。 */
   durationMs?: number;
   /** 是否可折叠。 */

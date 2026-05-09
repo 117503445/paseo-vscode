@@ -67,6 +67,26 @@ func waitLocatorCountAtLeast(locator playwright.Locator, minimum int, timeout ti
 	return fmt.Errorf("等待元素数量达到 %d 超时，最后数量：%d", minimum, lastCount)
 }
 
+// expectLocatorCountAtMost 等待并断言元素数量不超过上限。
+// locator 是待计数元素。
+// maximum 是允许的最大数量。
+// timeout 是等待超时时间。
+func expectLocatorCountAtMost(locator playwright.Locator, maximum int, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	lastCount := 0
+	for time.Now().Before(deadline) {
+		count, err := locator.Count()
+		if err == nil {
+			lastCount = count
+		}
+		if err == nil && count <= maximum {
+			return nil
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return fmt.Errorf("等待元素数量不超过 %d 超时，最后数量：%d", maximum, lastCount)
+}
+
 // expectSelectValue 等待 select 元素选中指定值。
 // locator 是 select 元素。
 // expected 是期望选中值。

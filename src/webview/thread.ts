@@ -14,10 +14,12 @@ export function renderThread(nextState: PaseoViewState, agent: AgentView): HTMLE
   if (nextState.timeline.length === 0) {
     timeline.append(el("div", "empty", "等待任务输出"));
   }
+  const running = isAgentRunning(agent) || nextState.busy;
+  const lastAssistantId = running ? null : resolveLastAssistantId(nextState.timeline);
   for (const item of nextState.timeline) {
-    timeline.append(renderTimelineItem(item));
+    timeline.append(renderTimelineItem(item, item.id === lastAssistantId));
   }
-  if (isAgentRunning(agent) || nextState.busy) {
+  if (running) {
     timeline.append(renderProcessingGroup(agent));
   }
   section.append(timeline);
@@ -30,8 +32,9 @@ export function renderThread(nextState: PaseoViewState, agent: AgentView): HTMLE
 /**
  * 渲染 timeline item。
  * @param item timeline item。
+ * @param showAssistantActions 是否展示 assistant 操作。
  */
-function renderTimelineItem(item: TimelineItemView): HTMLElement {
+function renderTimelineItem(item: TimelineItemView, showAssistantActions: boolean): HTMLElement {
   if (item.type === "user") {
     const block = el("article", "message user-message");
     block.dataset.testid = "paseo-message-user";
@@ -41,7 +44,10 @@ function renderTimelineItem(item: TimelineItemView): HTMLElement {
   if (item.type === "assistant") {
     const block = el("article", "message assistant-message");
     block.dataset.testid = "paseo-message-assistant";
-    block.append(el("div", "message-text", item.text), renderMessageActions());
+    block.append(el("div", "message-text", item.text));
+    if (showAssistantActions) {
+      block.append(renderMessageActions(item));
+    }
     return block;
   }
   const details = document.createElement("details");
@@ -50,7 +56,11 @@ function renderTimelineItem(item: TimelineItemView): HTMLElement {
   details.dataset.testid = "paseo-processing-group";
   const summary = document.createElement("summary");
   summary.textContent = `${item.title ?? "已处理"}${item.status ? ` ${item.status}` : ""}`;
-  details.append(summary, el("pre", "processing-body", item.text));
+  const body = el("pre", "processing-body", item.text);
+  details.append(summary);
+  if (item.text.trim()) {
+    details.append(body);
+  }
   return details;
 }
 
@@ -60,19 +70,32 @@ function renderTimelineItem(item: TimelineItemView): HTMLElement {
  */
 function renderProcessingGroup(agent: AgentView): HTMLElement {
   const details = document.createElement("details");
-  details.className = "processing";
+  details.className = "processing live-processing";
   details.dataset.testid = "paseo-processing-group";
   const summary = document.createElement("summary");
   summary.textContent = agent.status === "running" ? "正在处理" : "准备中";
-  details.append(summary, el("div", "processing-body", "等待 daemon 推送任务事件"));
+  details.append(summary);
   return details;
 }
 
 /**
  * 渲染 assistant 消息操作。
+ * @param item assistant 消息。
  */
-function renderMessageActions(): HTMLElement {
+function renderMessageActions(item: TimelineItemView): HTMLElement {
   const actions = el("div", "message-actions");
-  actions.append(iconButton("⧉", "复制", () => undefined), iconButton("↳", "继续", () => undefined));
+  actions.append(iconButton("⧉", "复制", () => void navigator.clipboard?.writeText(item.text)));
   return actions;
+}
+
+/**
+ * 解析最后一条 assistant 消息 ID。
+ * @param items 当前 timeline。
+ */
+function resolveLastAssistantId(items: TimelineItemView[]): string | null {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (item?.type === "assistant") return item.id;
+  }
+  return null;
 }

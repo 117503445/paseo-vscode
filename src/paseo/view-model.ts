@@ -48,6 +48,26 @@ const MOCK_PROVIDER_MODELS = [
 ];
 const MOCK_PROVIDER_MODES = [{ id: "load-test", label: "Load Test", isDefault: true }];
 
+/** timeline 映射元信息。 */
+export interface TimelineEntryMetadata {
+  /** item 时间戳。 */
+  timestamp?: string;
+  /** 可选 ID 种子。 */
+  idSeed?: string;
+  /** provider ID。 */
+  provider?: string;
+  /** 起始 timeline seq。 */
+  seqStart?: number;
+  /** 结束 timeline seq。 */
+  seqEnd?: number;
+}
+
+/** timeline 追加输入。 */
+export interface TimelineAppendInput extends TimelineEntryMetadata {
+  /** daemon timeline item。 */
+  item: unknown;
+}
+
 /**
  * 映射 agent 到 Webview 状态。
  * @param agent daemon agent 快照。
@@ -101,47 +121,225 @@ export function mapProvider(entry: ProviderSnapshotLike): ProviderView {
 
 /**
  * 映射 timeline item。
- * @param item daemon timeline item 或 stream event。
+ * @param item daemon timeline item。
  * @param timestamp item 时间戳。
  * @param idSeed 可选 ID 种子。
+ * @param metadata timeline 元信息。
  */
-export function mapTimelineEntry(item: unknown, timestamp?: string, idSeed?: string): TimelineItemView {
+export function mapTimelineEntry(
+  item: unknown,
+  timestamp?: string,
+  idSeed?: string,
+  metadata: Omit<TimelineEntryMetadata, "timestamp" | "idSeed"> = {},
+): TimelineItemView | null {
   const record = isRecord(item) ? item : {};
   const type = record.type;
-  const id = `${idSeed ?? timestamp ?? Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const base = {
+    provider: metadata.provider,
+    seqStart: metadata.seqStart,
+    seqEnd: metadata.seqEnd,
+    timestamp,
+  };
+  const id = idSeed ?? `${type ?? "timeline"}-${timestamp ?? Date.now()}-${Math.random().toString(36).slice(2)}`;
   if (type === "user_message") {
-    return { id, type: "user", title: "用户提示提交", text: readString(record.text), status: "completed", timestamp };
+    return { ...base, id, type: "user", title: "用户提示提交", text: readString(record.text), status: "completed" };
   }
   if (type === "assistant_message") {
-    return { id, type: "assistant", title: "Assistant", text: readString(record.text), timestamp };
+    return { ...base, id, type: "assistant", title: "Assistant", text: readString(record.text) };
   }
   if (type === "reasoning") {
-    return { id, type: "reasoning", title: "已处理", text: readString(record.text), collapsible: true, timestamp };
+    return { ...base, id, type: "reasoning", title: "已处理", text: readString(record.text), collapsible: true };
   }
   if (type === "error") {
-    return { id, type: "error", title: "错误", text: readString(record.message), status: "failed", timestamp };
+    return { ...base, id, type: "error", title: "错误", text: readString(record.message), status: "failed" };
   }
   if (type === "todo") {
     const items = Array.isArray(record.items)
       ? record.items.map((entry) => (isRecord(entry) ? `${entry.completed ? "[x]" : "[ ]"} ${entry.text}` : ""))
       : [];
-    return { id, type: "todo", title: "待办", text: items.filter(Boolean).join("\n"), collapsible: true, timestamp };
+    return { ...base, id, type: "todo", title: "待办", text: items.filter(Boolean).join("\n"), collapsible: true };
   }
   if (type === "tool_call") {
     return {
+      ...base,
       id,
       type: "tool",
       title: readString(record.name) || "工具调用",
-      text: `${readString(record.name) || "tool"} ${readString(record.status)}`.trim(),
+      text: formatToolCallText(record),
       status: readString(record.status),
+      callId: readString(record.callId) || undefined,
       collapsible: true,
-      timestamp,
     };
   }
-  if (typeof type === "string") {
-    return { id, type: "system", title: "系统事件", text: type, collapsible: true, timestamp };
+  if (type === "compaction") {
+    return {
+      ...base,
+      id,
+      type: "system",
+      title: "上下文压缩",
+      text: readString(record.status) || "compaction",
+      status: readString(record.status),
+      collapsible: true,
+    };
   }
-  return { id, type: "system", title: "系统事件", text: JSON.stringify(item), collapsible: true, timestamp };
+  return null;
+}
+
+/**
+ * 追加一条 daemon timeline item，并合并流式片段。
+ * @param timeline 当前可见 timeline。
+ * @param input 追加输入。
+ */
+export function appendTimelineEntry(
+  timeline: TimelineItemView[],
+  input: TimelineAppendInput,
+): TimelineItemView[] {
+  const item = mapTimelineEntry(input.item, input.timestamp, input.idSeed, {
+    provider: input.provider,
+    seqStart: input.seqStart,
+    seqEnd: input.seqEnd,
+  });
+  if (!item) return timeline;
+
+  if (item.type === "assistant" || item.type === "reasoning") {
+    return appendTextStreamItem(timeline, item);
+  }
+  if (!hasVisibleText(item.text) && item.type !== "tool") return timeline;
+  if (item.type === "tool" && item.callId) {
+    return upsertToolCallItem(timeline, item);
+  }
+  if (item.type === "todo") {
+    return upsertTodoItem(timeline, item);
+  }
+  return [...timeline, item];
+}
+
+/**
+ * 追加 daemon stream 事件。
+ * @param timeline 当前可见 timeline。
+ * @param event daemon stream 事件。
+ * @param timestamp 事件时间戳。
+ * @param seq 可选 timeline seq。
+ */
+export function appendTimelineStreamEvent(
+  timeline: TimelineItemView[],
+  event: unknown,
+  timestamp?: string,
+  seq?: number,
+): TimelineItemView[] {
+  const record = isRecord(event) ? event : {};
+  if (record.type !== "timeline") return timeline;
+  return appendTimelineEntry(timeline, {
+    item: record.item,
+    timestamp,
+    provider: readString(record.provider) || undefined,
+    seqStart: seq,
+    seqEnd: seq,
+  });
+}
+
+/**
+ * 归约一组 daemon timeline item。
+ * @param entries timeline 追加输入列表。
+ */
+export function reduceTimelineEntries(entries: TimelineAppendInput[]): TimelineItemView[] {
+  return entries.reduce<TimelineItemView[]>((timeline, entry) => appendTimelineEntry(timeline, entry), []);
+}
+
+/**
+ * 追加可流式文本 item。
+ * @param timeline 当前可见 timeline。
+ * @param item 待追加 item。
+ */
+function appendTextStreamItem(timeline: TimelineItemView[], item: TimelineItemView): TimelineItemView[] {
+  const last = timeline[timeline.length - 1];
+  if (last?.type === item.type) {
+    return [
+      ...timeline.slice(0, -1),
+      {
+        ...last,
+        text: `${last.text}${normalizeTimelineText(item.text)}`,
+        timestamp: item.timestamp,
+        seqEnd: item.seqEnd ?? last.seqEnd,
+      },
+    ];
+  }
+  if (!hasVisibleText(item.text)) return timeline;
+  return [...timeline, { ...item, text: normalizeTimelineText(item.text) }];
+}
+
+/**
+ * 更新同一个工具调用 item。
+ * @param timeline 当前可见 timeline。
+ * @param item 工具调用 item。
+ */
+function upsertToolCallItem(timeline: TimelineItemView[], item: TimelineItemView): TimelineItemView[] {
+  const index = timeline.findIndex((entry) => entry.type === "tool" && entry.callId === item.callId);
+  if (index < 0) return [...timeline, item];
+  const next = [...timeline];
+  next[index] = {
+    ...next[index],
+    ...item,
+    id: next[index]?.id ?? item.id,
+    text: item.text || next[index]?.text || "",
+    status: mergeToolStatus(next[index]?.status, item.status),
+    seqStart: next[index]?.seqStart ?? item.seqStart,
+    seqEnd: item.seqEnd ?? next[index]?.seqEnd,
+  };
+  return next;
+}
+
+/**
+ * 更新连续的 todo item。
+ * @param timeline 当前可见 timeline。
+ * @param item todo item。
+ */
+function upsertTodoItem(timeline: TimelineItemView[], item: TimelineItemView): TimelineItemView[] {
+  const last = timeline[timeline.length - 1];
+  if (last?.type === "todo" && last.provider === item.provider) {
+    return [...timeline.slice(0, -1), { ...last, ...item, id: last.id }];
+  }
+  return [...timeline, item];
+}
+
+/**
+ * 格式化工具调用摘要。
+ * @param record 工具调用原始记录。
+ */
+function formatToolCallText(record: Record<string, unknown>): string {
+  const name = readString(record.name) || "tool";
+  const status = readString(record.status);
+  const error = record.error === null || record.error === undefined ? "" : `\n${JSON.stringify(record.error)}`;
+  return `${name}${status ? ` ${status}` : ""}${error}`.trim();
+}
+
+/**
+ * 合并工具状态。
+ * @param previous 旧状态。
+ * @param next 新状态。
+ */
+function mergeToolStatus(previous: string | undefined, next: string | undefined): string | undefined {
+  if (previous === "failed" || next === "failed") return "failed";
+  if (previous === "canceled") return "canceled";
+  if (next === "canceled") return previous === "completed" ? "completed" : "canceled";
+  if (previous === "completed" || next === "completed") return "completed";
+  return next ?? previous;
+}
+
+/**
+ * 判断文本是否有可见内容。
+ * @param value 待判断文本。
+ */
+function hasVisibleText(value: string): boolean {
+  return /\S/.test(value);
+}
+
+/**
+ * 归一化 timeline 文本。
+ * @param value 原始文本。
+ */
+function normalizeTimelineText(value: string): string {
+  return value.replace(/\r/g, "");
 }
 
 /**

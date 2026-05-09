@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/playwright-community/playwright-go"
@@ -70,6 +71,15 @@ func runCase(ctx context.Context, page playwright.Page, baseURL string, name str
 			return err
 		}
 		return expectCodexLikeUX(frame)
+	case "timeline-stream-coalescing":
+		frame, err := openPaseoView(page)
+		if err != nil {
+			return err
+		}
+		if err := expectText(frame.Locator(`[data-testid="paseo-daemon-status"]`), "已连接", 60*time.Second); err != nil {
+			return err
+		}
+		return expectTimelineStreamCoalescing(frame)
 	case "reload-reconnect":
 		if _, err := page.Goto(baseURL); err != nil {
 			return err
@@ -158,6 +168,53 @@ func createMockChat(frame playwright.Frame) error {
 		return err
 	}
 	return waitLocatorCountAtLeast(frame.Locator(`[data-testid="paseo-message-user"]`), 2, 30*time.Second)
+}
+
+// expectTimelineStreamCoalescing 断言流式输出不会按 token 拆成多条消息。
+// frame 是 Paseo webview frame。
+func expectTimelineStreamCoalescing(frame playwright.Frame) error {
+	if err := selectOptionWhenAvailable(frame.Locator(`[data-testid="paseo-composer-provider"]`), "mock", 30*time.Second); err != nil {
+		return err
+	}
+	if err := selectOptionWhenAvailable(frame.Locator(`[data-testid="paseo-composer-model"]`), "ten-second-stream", 30*time.Second); err != nil {
+		return err
+	}
+	if err := selectOptionWhenAvailable(frame.Locator(`[data-testid="paseo-composer-mode"]`), "load-test", 30*time.Second); err != nil {
+		return err
+	}
+	if err := frame.Locator(`[data-testid="paseo-composer-input"]`).Fill("emit 100 coalesced agent stream updates"); err != nil {
+		return err
+	}
+	if err := frame.Locator(`[data-testid="paseo-composer-send"]`).Click(); err != nil {
+		return err
+	}
+	if err := frame.Locator(`[data-testid="paseo-thread-view"]`).WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(60_000),
+	}); err != nil {
+		return err
+	}
+	if err := frame.Locator(`[data-testid="paseo-message-assistant"]`).First().WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(60_000),
+	}); err != nil {
+		return err
+	}
+	if err := expectText(frame.Locator(`[data-testid="paseo-running-count"]`), "0 正在进行中", 90*time.Second); err != nil {
+		return err
+	}
+	if err := expectLocatorCountAtMost(frame.Locator(`[data-testid="paseo-message-assistant"]`), 2, 5*time.Second); err != nil {
+		return err
+	}
+	if err := expectLocatorCountAtMost(frame.Locator(`[data-testid="paseo-processing-group"]`), 8, 5*time.Second); err != nil {
+		return err
+	}
+	timelineText, err := frame.Locator(`[data-testid="paseo-timeline"]`).TextContent()
+	if err != nil {
+		return err
+	}
+	if strings.Contains(timelineText, "turn_started") || strings.Contains(timelineText, "turn_completed") {
+		return fmt.Errorf("timeline 不应显示生命周期事件，实际文本：%q", timelineText)
+	}
+	return nil
 }
 
 // createChatWithDefaultReadyProvider 验证首次使用时默认可用 provider 可直接发送。

@@ -26,11 +26,12 @@ import type {
 } from "./types";
 import {
   errorToMessage,
+  appendTimelineStreamEvent,
   isAgentRunning,
   isRecord,
   mapAgent,
   mapProvider,
-  mapTimelineEntry,
+  reduceTimelineEntries,
   readString,
   resolveAgentPatchFromStreamEvent,
   upsertAgent,
@@ -285,8 +286,15 @@ export class PaseoService {
         limit: 200,
         projection: "projected",
       });
-      const timeline = payload.entries.map((entry, index) =>
-        mapTimelineEntry(entry.item, entry.timestamp, `${entry.seqStart}-${entry.seqEnd}-${index}`),
+      const timeline = reduceTimelineEntries(
+        payload.entries.map((entry, index) => ({
+          item: entry.item,
+          timestamp: entry.timestamp,
+          idSeed: `${entry.seqStart}-${entry.seqEnd}-${index}`,
+          provider: entry.provider,
+          seqStart: entry.seqStart,
+          seqEnd: entry.seqEnd,
+        })),
       );
       this.patchState({
         timeline,
@@ -630,11 +638,10 @@ export class PaseoService {
         );
       }
       if (event.agentId === this.state.selectedAgentId) {
-        const item = mapTimelineEntry(
-          streamEvent.type === "timeline" ? streamEvent.item : event.event,
-          event.timestamp,
-        );
-        patch.timeline = [...this.state.timeline, item];
+        const timeline = appendTimelineStreamEvent(this.state.timeline, event.event, event.timestamp, event.seq);
+        if (timeline !== this.state.timeline) {
+          patch.timeline = timeline;
+        }
       }
       if (patch.agents || patch.timeline) {
         this.patchState(patch);

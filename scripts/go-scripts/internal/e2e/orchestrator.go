@@ -56,7 +56,7 @@ func runAllOrchestrator(ctx context.Context, cfg Config, composeFile string) err
 	if err := runCommand(ctx, cfg.ProjectRoot, "docker", "compose", "-f", composeFile, "up", "-d", "code-server"); err != nil {
 		return err
 	}
-	for _, name := range []string{"command-new-agent-cold-start", "offline-daemon-start", "default-ready-provider", "composer-preserves-draft-on-error", "command-new-agent-default-provider", "codex-like-ux", "mock-chat", "reload-reconnect"} {
+	for _, name := range []string{"command-new-agent-cold-start", "offline-daemon-start", "default-ready-provider", "composer-preserves-draft-on-error", "command-new-agent-default-provider", "codex-like-ux", "mock-chat", "timeline-stream-coalescing", "reload-reconnect"} {
 		extraEnv := []string{}
 		if name == "reload-reconnect" {
 			extraEnv = append(extraEnv, "PASEO_E2E_EXPECT_RELOAD_AGENT=1")
