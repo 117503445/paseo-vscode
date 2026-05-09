@@ -26,6 +26,12 @@ func runCase(ctx context.Context, page playwright.Page, baseURL string, name str
 			return err
 		}
 		return expectText(frame.Locator(`[data-testid="paseo-daemon-status"]`), "已连接", 60*time.Second)
+	case "topbar-connection-status":
+		frame, err := openPaseoView(page)
+		if err != nil {
+			return err
+		}
+		return expectTopbarConnectionStatus(frame)
 	case "mock-chat":
 		frame, err := openPaseoView(page)
 		if err != nil {
@@ -140,6 +146,21 @@ func expectReloadedAgent(frame playwright.Frame) error {
 		return err
 	}
 	return waitLocatorCountAtLeast(frame.Locator(`[data-testid="paseo-message-assistant"]`), 1, 30*time.Second)
+}
+
+// expectTopbarConnectionStatus 断言顶部连接信息完整展示。
+// frame 是 Paseo webview frame。
+func expectTopbarConnectionStatus(frame playwright.Frame) error {
+	if err := expectText(frame.Locator(`[data-testid="paseo-daemon-status"]`), "已连接", 60*time.Second); err != nil {
+		return err
+	}
+	if err := expectText(frame.Locator(`[data-testid="paseo-workspace-path"]`), "/workspace/project", 30*time.Second); err != nil {
+		return err
+	}
+	if err := expectText(frame.Locator(`[data-testid="paseo-daemon-message"]`), "已连接 Paseo daemon", 30*time.Second); err != nil {
+		return err
+	}
+	return expectRunningCountHidden(frame, 5*time.Second)
 }
 
 // createMockChat 创建 mock agent 并断言 timeline。

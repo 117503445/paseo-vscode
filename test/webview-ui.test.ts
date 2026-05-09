@@ -4,7 +4,7 @@ import { buildComposerProviderPickerOptions } from "../src/webview/composer";
 import { buildSelectDisplayOptions, iconButton, type PaseoIconName } from "../src/webview/dom";
 import { renderMarkdownToHtml } from "../src/webview/markdown";
 import { formatAgentRuntimeLabel, listVisibleTasks } from "../src/webview/tasks";
-import { renderTopTools } from "../src/webview/topbar";
+import { renderHeader, renderTopTools } from "../src/webview/topbar";
 
 const baseAgent: AgentView = {
   id: "agent-base",
@@ -149,6 +149,20 @@ function hasFakeTestId(node: FakeElementNode, testid: string): boolean {
   return node.dataset.testid === testid || node.children.some((child) => hasFakeTestId(child, testid));
 }
 
+/**
+ * 查找带指定 testid 的假元素。
+ * @param node 假元素根节点。
+ * @param testid 目标 testid。
+ */
+function findFakeTestId(node: FakeElementNode, testid: string): FakeElementNode | null {
+  if (node.dataset.testid === testid) return node;
+  for (const child of node.children) {
+    const target = findFakeTestId(child, testid);
+    if (target) return target;
+  }
+  return null;
+}
+
 describe("webview user visible ui", () => {
   test("task list always shows every task without search or status filtering", () => {
     const agents: AgentView[] = [
@@ -234,6 +248,24 @@ describe("webview user visible ui", () => {
 
       expect(collectFakeText(target)).not.toContain("正在进行中");
       expect(hasFakeTestId(target, "paseo-running-count")).toBe(false);
+    });
+  });
+
+  test("topbar shows connection status workspace and daemon description", () => {
+    withFakeDocument(() => {
+      const target = renderHeader(
+        {
+          ...baseState,
+          workspacePath: "/workspace/project/docker-dev",
+          daemon: { ...baseState.daemon, status: "connected", message: "已连接 Paseo daemon" },
+        },
+        () => undefined,
+      ) as unknown as FakeElementNode;
+
+      expect(findFakeTestId(target, "paseo-daemon-status")?.textContent).toBe("已连接");
+      expect(findFakeTestId(target, "paseo-workspace-path")?.textContent).toBe("/workspace/project/docker-dev");
+      expect(findFakeTestId(target, "paseo-daemon-message")?.textContent).toBe("已连接 Paseo daemon");
+      expect(collectFakeText(target)).not.toContain("正在进行中");
     });
   });
 

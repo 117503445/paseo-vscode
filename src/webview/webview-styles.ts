@@ -173,14 +173,24 @@ export const WEBVIEW_STYLES = /* css */ `
     min-width: 0;
     align-items: center;
     gap: 6px;
+    overflow: hidden;
     color: var(--vscode-descriptionForeground);
     font-size: 12px;
     line-height: 1.35;
   }
-  .status-line .muted {
+  .status-line .workspace-path,
+  .status-line .daemon-message {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .status-line .workspace-path {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .status-line .daemon-message {
+    flex: 0 1 auto;
+    max-width: 44%;
   }
   .status-pill {
     flex: 0 0 auto;

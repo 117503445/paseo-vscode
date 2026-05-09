@@ -1,9 +1,9 @@
 import type { ExtensionToWebviewMessage, PaseoViewState, WebviewToExtensionMessage } from "../paseo/types";
 import { ComposerController } from "./composer";
-import { button, el, iconButton, statusLabel, type PostMessage } from "./dom";
+import { type PostMessage } from "./dom";
 import { renderTasks } from "./tasks";
 import { renderThread } from "./thread";
-import { renderTopTools } from "./topbar";
+import { renderHeader } from "./topbar";
 
 declare const acquireVsCodeApi: () => {
   /**
@@ -34,41 +34,7 @@ vscode.postMessage({ type: "ready" });
  */
 function render(nextState: PaseoViewState): void {
   root.innerHTML = "";
-  root.append(renderHeader(nextState), renderContent(nextState), composer.render(nextState));
-}
-
-/**
- * 渲染顶部区域。
- * @param nextState 当前视图状态。
- */
-function renderHeader(nextState: PaseoViewState): HTMLElement {
-  const section = el("section", nextState.screen === "thread" ? "topbar thread-topbar" : "topbar task-topbar");
-  section.dataset.testid = "paseo-status";
-  if (nextState.screen === "thread" && nextState.selectedAgent) {
-    const back = iconButton("back", "返回任务", () => post({ type: "backToTasks" }));
-    back.dataset.testid = "paseo-back-to-tasks";
-    const title = button(nextState.selectedAgent.title, "当前任务", () => undefined);
-    title.className = "title-button";
-    section.append(back, title, renderTopTools(nextState, post));
-  } else {
-    section.append(el("div", "title", "任务"), renderTopTools(nextState, post));
-  }
-
-  const meta = el("div", "status-line");
-  const status = el("span", "status-pill", statusLabel(nextState));
-  status.dataset.testid = "paseo-daemon-status";
-  meta.append(status, el("span", "muted", nextState.workspacePath ?? "未打开文件夹"));
-  section.append(meta);
-
-  if (nextState.daemon.message) {
-    section.append(el("div", "muted", nextState.daemon.message));
-  }
-  if (nextState.error) {
-    const error = el("div", "error", nextState.error);
-    error.dataset.testid = "paseo-error";
-    section.append(error);
-  }
-  return section;
+  root.append(renderHeader(nextState, post), renderContent(nextState), composer.render(nextState));
 }
 
 /**
