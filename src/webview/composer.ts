@@ -1,5 +1,5 @@
 import type { ComposerInput, PaseoViewState, ProviderView, SelectOptionView } from "../paseo/types";
-import { button, createSelect, el, iconButton, isAgentRunning, type PostMessage } from "./dom";
+import { createSelect, el, iconButton, isAgentRunning, type PostMessage } from "./dom";
 
 /**
  * 管理 composer 的本地草稿和渲染。
@@ -132,7 +132,6 @@ export class ComposerController {
       this.rerender(nextState);
     });
     menu.dataset.testid = "paseo-composer-menu";
-    const plan = this.renderPlanModeToggle(nextState);
     const running = Boolean(nextState.selectedAgent && isAgentRunning(nextState.selectedAgent));
     const submit = running
       ? iconButton("■", "停止", () => {
@@ -147,26 +146,10 @@ export class ComposerController {
       nextState.busy ||
       this.pendingText !== null ||
       (!running && this.draft.trim().length === 0);
-    left.append(menu, plan);
+    left.append(menu);
     right.append(providerSelect, modelSelect, modeSelect, submit);
     controls.append(left, right);
     return controls;
-  }
-
-  /**
-   * 渲染计划模式切换。
-   * @param nextState 当前视图状态。
-   */
-  private renderPlanModeToggle(nextState: PaseoViewState): HTMLButtonElement {
-    const target = button("计划", "计划模式", () => {
-      this.planMode = !this.planMode;
-      this.post({ type: "toggleComposerOption", option: "planMode", enabled: this.planMode });
-      this.rerender(nextState);
-    });
-    target.className = this.planMode ? "composer-pill active" : "composer-pill";
-    target.dataset.testid = "paseo-toggle-plan-mode";
-    target.setAttribute("aria-pressed", String(this.planMode));
-    return target;
   }
 
   /**
@@ -235,9 +218,18 @@ export class ComposerController {
   private renderMenu(): HTMLElement {
     const menu = el("div", "composer-menu");
     menu.append(
-      this.menuCheckbox("包含 IDE 背景信息", this.includeIdeContext, "paseo-toggle-ide-context", (checked) => {
-        this.includeIdeContext = checked;
+      this.menuCheckbox("计划模式", this.planMode, "paseo-toggle-plan-mode", "planMode", (checked) => {
+        this.planMode = checked;
       }),
+      this.menuCheckbox(
+        "包含 IDE 背景信息",
+        this.includeIdeContext,
+        "paseo-toggle-ide-context",
+        "includeIdeContext",
+        (checked) => {
+          this.includeIdeContext = checked;
+        },
+      ),
       el("button", "menu-item disabled", "添加当前文件/选区"),
     );
     return menu;
@@ -248,12 +240,14 @@ export class ComposerController {
    * @param label 展示文案。
    * @param checked 是否选中。
    * @param testid 测试 ID。
+   * @param option composer 选项标识。
    * @param onChange 变更回调。
    */
   private menuCheckbox(
     label: string,
     checked: boolean,
     testid: string,
+    option: "includeIdeContext" | "planMode",
     onChange: (checked: boolean) => void,
   ): HTMLElement {
     const wrapper = el("label", "menu-item");
@@ -265,7 +259,7 @@ export class ComposerController {
       onChange(input.checked);
       this.post({
         type: "toggleComposerOption",
-        option: testid.includes("plan") ? "planMode" : "includeIdeContext",
+        option,
         enabled: input.checked,
       });
     });

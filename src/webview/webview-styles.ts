@@ -292,17 +292,6 @@ export const WEBVIEW_STYLES = /* css */ `
     border-radius: 999px;
     background: var(--vscode-dropdown-background, var(--vscode-input-background));
   }
-  .composer-pill {
-    min-width: 40px;
-    border-radius: 999px;
-    color: var(--vscode-foreground);
-    background: transparent;
-    border-color: var(--vscode-input-border, transparent);
-  }
-  .composer-pill.active {
-    color: var(--vscode-button-foreground);
-    background: var(--vscode-button-background);
-  }
   .composer-menu {
     position: absolute;
     left: 10px;

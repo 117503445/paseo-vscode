@@ -502,10 +502,12 @@ func expectCodexLikeUX(frame playwright.Frame) error {
 	if err := selectOptionWhenAvailable(frame.Locator(`[data-testid="paseo-composer-mode"]`), "load-test", 30*time.Second); err != nil {
 		return err
 	}
-	if err := frame.Locator(`[data-testid="paseo-toggle-plan-mode"]`).WaitFor(playwright.LocatorWaitForOptions{
-		Timeout: playwright.Float(10_000),
-	}); err != nil {
+	planModeCount, err := frame.Locator(`[data-testid="paseo-toggle-plan-mode"]`).Count()
+	if err != nil {
 		return err
+	}
+	if planModeCount != 0 {
+		return fmt.Errorf("计划模式不应作为 composer 常驻入口展示，实际数量：%d", planModeCount)
 	}
 	ideContextCount, err := frame.Locator(`[data-testid="paseo-toggle-ide-context"]`).Count()
 	if err != nil {
@@ -521,6 +523,40 @@ func expectCodexLikeUX(frame playwright.Frame) error {
 		Timeout: playwright.Float(10_000),
 	}); err != nil {
 		return err
+	}
+	planMode := frame.Locator(`[data-testid="paseo-toggle-plan-mode"]`)
+	if err := planMode.WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(10_000),
+	}); err != nil {
+		return err
+	}
+	planModeInput := frame.Locator(`[data-testid="paseo-toggle-plan-mode"] input`)
+	checked, err := planModeInput.IsChecked()
+	if err != nil {
+		return err
+	}
+	if checked {
+		return fmt.Errorf("计划模式默认不应启用")
+	}
+	if err := planMode.Click(); err != nil {
+		return err
+	}
+	checked, err = planModeInput.IsChecked()
+	if err != nil {
+		return err
+	}
+	if !checked {
+		return fmt.Errorf("计划模式菜单项点击后应启用")
+	}
+	if err := planMode.Click(); err != nil {
+		return err
+	}
+	checked, err = planModeInput.IsChecked()
+	if err != nil {
+		return err
+	}
+	if checked {
+		return fmt.Errorf("计划模式菜单项再次点击后应关闭")
 	}
 	if err := frame.Locator(`[data-testid="paseo-composer-input"]`).Click(); err != nil {
 		return err
