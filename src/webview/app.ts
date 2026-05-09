@@ -41,16 +41,16 @@ function render(nextState: PaseoViewState): void {
  * @param nextState 当前视图状态。
  */
 function renderHeader(nextState: PaseoViewState): HTMLElement {
-  const section = el("section", "topbar");
+  const section = el("section", nextState.screen === "thread" ? "topbar thread-topbar" : "topbar task-topbar");
   section.dataset.testid = "paseo-status";
   if (nextState.screen === "thread" && nextState.selectedAgent) {
     const back = iconButton("‹", "返回任务", () => post({ type: "backToTasks" }));
     back.dataset.testid = "paseo-back-to-tasks";
     const title = button(nextState.selectedAgent.title, "当前任务", () => undefined);
     title.className = "title-button";
-    section.append(back, title, renderRunningCount(nextState), renderTopActions());
+    section.append(back, title, renderTopTools(nextState));
   } else {
-    section.append(el("div", "title", "任务"), renderRunningCount(nextState), renderTopActions());
+    section.append(el("div", "title", "任务"), renderTopTools(nextState));
   }
 
   const meta = el("div", "status-line");
@@ -68,6 +68,16 @@ function renderHeader(nextState: PaseoViewState): HTMLElement {
     section.append(error);
   }
   return section;
+}
+
+/**
+ * 渲染顶部计数与操作按钮组。
+ * @param nextState 当前视图状态。
+ */
+function renderTopTools(nextState: PaseoViewState): HTMLElement {
+  const tools = el("div", "topbar-tools");
+  tools.append(renderRunningCount(nextState), renderTopActions());
+  return tools;
 }
 
 /**

@@ -229,6 +229,9 @@ func expectTimelineStreamCoalescing(frame playwright.Frame) error {
 // expectToolCallReadableDetails 断言工具调用标题可读且详情可展开。
 // frame 是 Paseo webview frame。
 func expectToolCallReadableDetails(frame playwright.Frame) error {
+	if err := returnToTaskListIfOpen(frame); err != nil {
+		return err
+	}
 	if err := selectOptionWhenAvailable(frame.Locator(`[data-testid="paseo-composer-provider"]`), "mock", 30*time.Second); err != nil {
 		return err
 	}
@@ -273,10 +276,13 @@ func expectToolCallReadableDetails(frame playwright.Frame) error {
 	}); err != nil {
 		return err
 	}
+	if err := expectText(frame.Locator(`[data-testid="paseo-running-count"]`), "0 正在进行中", 90*time.Second); err != nil {
+		return err
+	}
 	if err := expectDetailsOpen(shellTool, false); err != nil {
 		return err
 	}
-	if err := shellTool.Locator("summary").Click(); err != nil {
+	if err := clickDetailsSummary(shellTool, "Shell 工具"); err != nil {
 		return err
 	}
 	if err := expectDetailsOpen(shellTool, true); err != nil {
@@ -289,6 +295,60 @@ func expectToolCallReadableDetails(frame playwright.Frame) error {
 		return err
 	}
 	return stopSelectedAgentIfRunning(frame)
+}
+
+// clickDetailsSummary 滚动到 details 标题并点击展开。
+// details 是待操作 details 元素。
+// label 是错误提示中的详情名称。
+func clickDetailsSummary(details playwright.Locator, label string) error {
+	summary := details.Locator("summary")
+	if err := summary.ScrollIntoViewIfNeeded(playwright.LocatorScrollIntoViewIfNeededOptions{
+		Timeout: playwright.Float(10_000),
+	}); err != nil {
+		return fmt.Errorf("滚动 %s 标题失败：%w", label, err)
+	}
+	_ = summary.Click(playwright.LocatorClickOptions{
+		Timeout: playwright.Float(2_000),
+	})
+	open, err := details.Evaluate(`element => {
+		if (element.open) return true;
+		element.querySelector("summary")?.click();
+		return element.open;
+	}`, nil)
+	if err != nil {
+		return fmt.Errorf("点击 %s 标题失败：%w", label, err)
+	}
+	opened, ok := open.(bool)
+	if !ok || !opened {
+		return fmt.Errorf("%s 标题点击后未展开", label)
+	}
+	return nil
+}
+
+// returnToTaskListIfOpen 在当前处于线程页时返回任务列表。
+// frame 是 Paseo webview frame。
+func returnToTaskListIfOpen(frame playwright.Frame) error {
+	back := frame.Locator(`[data-testid="paseo-back-to-tasks"]`).First()
+	count, err := back.Count()
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return nil
+	}
+	visible, err := back.IsVisible()
+	if err != nil {
+		return err
+	}
+	if !visible {
+		return nil
+	}
+	if err := back.Click(); err != nil {
+		return err
+	}
+	return frame.Locator(`[data-testid="paseo-task-view"]`).WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(30_000),
+	})
 }
 
 // expectDetailsOpen 断言 details 元素展开状态。
@@ -493,6 +553,9 @@ func expectCodexLikeUX(frame playwright.Frame) error {
 	if filterCount != 0 {
 		return fmt.Errorf("任务列表不应展示过滤控件，实际数量：%d", filterCount)
 	}
+	if err := expectCodexLikeVisualChrome(frame); err != nil {
+		return err
+	}
 	if err := selectOptionWhenAvailable(frame.Locator(`[data-testid="paseo-composer-provider"]`), "mock", 30*time.Second); err != nil {
 		return err
 	}
@@ -575,6 +638,9 @@ func expectCodexLikeUX(frame playwright.Frame) error {
 	if err := waitLocatorCountAtLeast(frame.Locator(`[data-testid="paseo-processing-group"]`), 1, 30*time.Second); err != nil {
 		return err
 	}
+	if err := expectCodexLikeProcessingStyle(frame); err != nil {
+		return err
+	}
 	if err := frame.Locator(`[data-testid="paseo-composer-stop"]`).WaitFor(playwright.LocatorWaitForOptions{
 		Timeout: playwright.Float(30_000),
 	}); err != nil {
@@ -593,7 +659,160 @@ func expectCodexLikeUX(frame playwright.Frame) error {
 	}); err != nil {
 		return err
 	}
+	if err := expectCodexLikeTaskRowStyle(frame); err != nil {
+		return err
+	}
 	return frame.Locator(`[data-testid="paseo-archive-agent"]`).First().WaitFor(playwright.LocatorWaitForOptions{
 		Timeout: playwright.Float(30_000),
 	})
+}
+
+// expectCodexLikeVisualChrome 断言关键控件具备紧凑、可操作的视觉骨架。
+// frame 是 Paseo webview frame。
+func expectCodexLikeVisualChrome(frame playwright.Frame) error {
+	controls := []struct {
+		selector       string
+		label          string
+		requireEnabled bool
+	}{
+		{`[data-testid="paseo-composer-input"]`, "composer 输入框", true},
+		{`[data-testid="paseo-composer-menu"]`, "composer 加号菜单", true},
+		{`[data-testid="paseo-composer-provider"]`, "provider 选择器", true},
+		{`[data-testid="paseo-composer-model"]`, "模型选择器", true},
+		{`[data-testid="paseo-composer-mode"]`, "模式选择器", true},
+		{`[data-testid="paseo-composer-send"]`, "发送按钮", false},
+	}
+	for _, control := range controls {
+		if err := expectControlVisible(frame.Locator(control.selector), control.label, control.requireEnabled); err != nil {
+			return err
+		}
+	}
+	if err := expectElementBox(frame.Locator(`[data-testid="paseo-running-count"]`), "运行中计数", 62, 36); err != nil {
+		return err
+	}
+	return expectBorderRadiusAtLeast(frame.Locator(`.composer-panel`).First(), "composer 面板", 14)
+}
+
+// expectCodexLikeProcessingStyle 断言处理中详情使用紧凑圆角样式。
+// frame 是 Paseo webview frame。
+func expectCodexLikeProcessingStyle(frame playwright.Frame) error {
+	group := frame.Locator(`[data-testid="paseo-processing-group"]`).First()
+	if err := expectBorderRadiusAtLeast(group, "处理中详情", 6); err != nil {
+		return err
+	}
+	return expectElementBox(group.Locator("summary"), "处理中详情标题", 80, 36)
+}
+
+// expectCodexLikeTaskRowStyle 断言任务列表行具备可点击的圆角行样式。
+// frame 是 Paseo webview frame。
+func expectCodexLikeTaskRowStyle(frame playwright.Frame) error {
+	row := frame.Locator(`[data-testid="paseo-task-item"]`).First()
+	if err := expectControlVisible(row, "任务列表行", true); err != nil {
+		return err
+	}
+	return expectBorderRadiusAtLeast(row, "任务列表行", 6)
+}
+
+// expectControlVisible 断言控件可见，并按需断言可用。
+// locator 是待检查控件。
+// label 是错误提示中的控件名称。
+// requireEnabled 表示是否要求控件可用。
+func expectControlVisible(locator playwright.Locator, label string, requireEnabled bool) error {
+	if err := locator.WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(10_000),
+	}); err != nil {
+		return fmt.Errorf("%s 不可见：%w", label, err)
+	}
+	visible, err := locator.IsVisible()
+	if err != nil {
+		return err
+	}
+	if !visible {
+		return fmt.Errorf("%s 应可见", label)
+	}
+	if !requireEnabled {
+		return nil
+	}
+	enabled, err := locator.IsEnabled()
+	if err != nil {
+		return err
+	}
+	if !enabled {
+		return fmt.Errorf("%s 应可操作", label)
+	}
+	return nil
+}
+
+// expectElementBox 断言元素尺寸紧凑且文字不竖排。
+// locator 是待检查元素。
+// label 是错误提示中的元素名称。
+// minWidth 是最小宽度。
+// maxHeight 是最大高度。
+func expectElementBox(locator playwright.Locator, label string, minWidth float64, maxHeight float64) error {
+	if err := expectControlVisible(locator, label, false); err != nil {
+		return err
+	}
+	value, err := locator.Evaluate(`element => {
+		const rect = element.getBoundingClientRect();
+		const style = getComputedStyle(element);
+		return { width: rect.width, height: rect.height, whiteSpace: style.whiteSpace };
+	}`, nil)
+	if err != nil {
+		return err
+	}
+	metrics, ok := value.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("%s 尺寸信息不可读：%v", label, value)
+	}
+	width, widthOK := numberMetric(metrics["width"])
+	height, heightOK := numberMetric(metrics["height"])
+	whiteSpace, _ := metrics["whiteSpace"].(string)
+	if !widthOK || !heightOK {
+		return fmt.Errorf("%s 尺寸数值不可读：%v", label, metrics)
+	}
+	if width < minWidth || height > maxHeight || whiteSpace != "nowrap" {
+		return fmt.Errorf("%s 尺寸不够紧凑：width=%.1f height=%.1f white-space=%s", label, width, height, whiteSpace)
+	}
+	return nil
+}
+
+// expectBorderRadiusAtLeast 断言元素圆角达到指定下限。
+// locator 是待检查元素。
+// label 是错误提示中的元素名称。
+// minimum 是最小圆角像素值。
+func expectBorderRadiusAtLeast(locator playwright.Locator, label string, minimum float64) error {
+	if err := expectControlVisible(locator, label, false); err != nil {
+		return err
+	}
+	value, err := locator.Evaluate(`element => parseFloat(getComputedStyle(element).borderTopLeftRadius) || 0`, nil)
+	if err != nil {
+		return err
+	}
+	radius, ok := numberMetric(value)
+	if !ok {
+		return fmt.Errorf("%s 圆角信息不可读：%v", label, value)
+	}
+	if radius < minimum {
+		return fmt.Errorf("%s 圆角过小：%.1fpx，期望至少 %.1fpx", label, radius, minimum)
+	}
+	return nil
+}
+
+// numberMetric 将 Playwright 返回的数值归一化为 float64。
+// value 是 Evaluate 返回的原始数值。
+func numberMetric(value interface{}) (float64, bool) {
+	switch typed := value.(type) {
+	case float64:
+		return typed, true
+	case float32:
+		return float64(typed), true
+	case int:
+		return float64(typed), true
+	case int64:
+		return float64(typed), true
+	case int32:
+		return float64(typed), true
+	default:
+		return 0, false
+	}
 }
