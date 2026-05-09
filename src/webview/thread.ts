@@ -1,5 +1,6 @@
 import type { AgentView, PaseoViewState, TimelineItemView } from "../paseo/types";
 import { el, iconButton, isAgentRunning } from "./dom";
+import { renderMarkdownToHtml } from "./markdown";
 
 /**
  * 渲染线程页。
@@ -44,7 +45,9 @@ function renderTimelineItem(item: TimelineItemView, showAssistantActions: boolea
   if (item.type === "assistant") {
     const block = el("article", "message assistant-message");
     block.dataset.testid = "paseo-message-assistant";
-    block.append(el("div", "message-text", item.text));
+    const text = el("div", "message-text markdown-body");
+    text.innerHTML = renderMarkdownToHtml(item.text);
+    block.append(text);
     if (showAssistantActions) {
       block.append(renderMessageActions(item));
     }

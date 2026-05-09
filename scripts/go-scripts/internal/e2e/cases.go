@@ -479,6 +479,20 @@ func expectCodexLikeUX(frame playwright.Frame) error {
 	if err := expectText(frame.Locator(`[data-testid="paseo-running-count"]`), "0 正在进行中", 30*time.Second); err != nil {
 		return err
 	}
+	searchCount, err := frame.Locator(`[data-testid="paseo-task-search"]`).Count()
+	if err != nil {
+		return err
+	}
+	if searchCount != 0 {
+		return fmt.Errorf("任务列表不应展示搜索框，实际数量：%d", searchCount)
+	}
+	filterCount, err := frame.Locator(`.segmented`).Count()
+	if err != nil {
+		return err
+	}
+	if filterCount != 0 {
+		return fmt.Errorf("任务列表不应展示过滤控件，实际数量：%d", filterCount)
+	}
 	if err := selectOptionWhenAvailable(frame.Locator(`[data-testid="paseo-composer-provider"]`), "mock", 30*time.Second); err != nil {
 		return err
 	}
@@ -487,6 +501,18 @@ func expectCodexLikeUX(frame playwright.Frame) error {
 	}
 	if err := selectOptionWhenAvailable(frame.Locator(`[data-testid="paseo-composer-mode"]`), "load-test", 30*time.Second); err != nil {
 		return err
+	}
+	if err := frame.Locator(`[data-testid="paseo-toggle-plan-mode"]`).WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(10_000),
+	}); err != nil {
+		return err
+	}
+	ideContextCount, err := frame.Locator(`[data-testid="paseo-toggle-ide-context"]`).Count()
+	if err != nil {
+		return err
+	}
+	if ideContextCount != 0 {
+		return fmt.Errorf("IDE 背景信息不应作为常驻入口展示，实际数量：%d", ideContextCount)
 	}
 	if err := frame.Locator(`[data-testid="paseo-composer-menu"]`).Click(); err != nil {
 		return err

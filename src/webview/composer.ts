@@ -1,5 +1,5 @@
-import type { ComposerInput, PaseoViewState, ProviderView } from "../paseo/types";
-import { createSelect, el, iconButton, isAgentRunning, type PostMessage } from "./dom";
+import type { ComposerInput, PaseoViewState, ProviderView, SelectOptionView } from "../paseo/types";
+import { button, createSelect, el, iconButton, isAgentRunning, type PostMessage } from "./dom";
 
 /**
  * 管理 composer 的本地草稿和渲染。
@@ -83,7 +83,9 @@ export class ComposerController {
    */
   render(nextState: PaseoViewState): HTMLElement {
     const section = el("section", "composer");
+    const panel = el("div", "composer-panel");
     const input = document.createElement("textarea");
+    input.className = "composer-input";
     input.placeholder = nextState.selectedAgentId ? "要求后续变更" : "问 Paseo 任何事";
     input.value = this.draft;
     input.dataset.testid = "paseo-composer-input";
@@ -91,7 +93,8 @@ export class ComposerController {
       this.draft = input.value;
       this.syncSubmitState(nextState);
     });
-    section.append(input, this.renderControls(nextState, input));
+    panel.append(input, this.renderControls(nextState, input));
+    section.append(panel);
     if (this.menuOpen) {
       section.append(this.renderMenu());
     }
@@ -119,14 +122,17 @@ export class ComposerController {
    */
   private renderControls(nextState: PaseoViewState, input: HTMLTextAreaElement): HTMLElement {
     const controls = el("div", "composer-controls");
+    const left = el("div", "composer-left-controls");
+    const right = el("div", "composer-right-controls");
     const providerSelect = this.renderProviderSelect(nextState);
     const modelSelect = this.renderModelSelect(nextState);
     const modeSelect = this.renderModeSelect(nextState);
-    const menu = iconButton("+", "添加文件等", () => {
+    const menu = iconButton("+", "添加附件和上下文", () => {
       this.menuOpen = !this.menuOpen;
       this.rerender(nextState);
     });
     menu.dataset.testid = "paseo-composer-menu";
+    const plan = this.renderPlanModeToggle(nextState);
     const running = Boolean(nextState.selectedAgent && isAgentRunning(nextState.selectedAgent));
     const submit = running
       ? iconButton("■", "停止", () => {
@@ -141,8 +147,26 @@ export class ComposerController {
       nextState.busy ||
       this.pendingText !== null ||
       (!running && this.draft.trim().length === 0);
-    controls.append(menu, providerSelect, modeSelect, modelSelect, submit);
+    left.append(menu, plan);
+    right.append(providerSelect, modelSelect, modeSelect, submit);
+    controls.append(left, right);
     return controls;
+  }
+
+  /**
+   * 渲染计划模式切换。
+   * @param nextState 当前视图状态。
+   */
+  private renderPlanModeToggle(nextState: PaseoViewState): HTMLButtonElement {
+    const target = button("计划", "计划模式", () => {
+      this.planMode = !this.planMode;
+      this.post({ type: "toggleComposerOption", option: "planMode", enabled: this.planMode });
+      this.rerender(nextState);
+    });
+    target.className = this.planMode ? "composer-pill active" : "composer-pill";
+    target.dataset.testid = "paseo-toggle-plan-mode";
+    target.setAttribute("aria-pressed", String(this.planMode));
+    return target;
   }
 
   /**
@@ -151,11 +175,9 @@ export class ComposerController {
    */
   private renderProviderSelect(nextState: PaseoViewState): HTMLSelectElement {
     const providers = this.renderableProviders(nextState);
-    const select = createSelect(
-      providers.map((provider) => ({ id: provider.provider, label: provider.label, isDefault: false })),
-      this.provider,
-    );
+    const select = createSelect(buildComposerProviderPickerOptions(providers), this.provider);
     select.dataset.testid = "paseo-composer-provider";
+    select.title = "Provider";
     select.disabled = Boolean(nextState.selectedAgentId);
     select.addEventListener("change", () => {
       this.providerTouched = true;
@@ -177,6 +199,7 @@ export class ComposerController {
     const provider = this.findProvider(nextState);
     const select = createSelect(provider?.models ?? [], this.model);
     select.dataset.testid = "paseo-composer-model";
+    select.title = "模型";
     select.addEventListener("change", () => {
       this.modelTouched = true;
       this.model = select.value;
@@ -195,6 +218,7 @@ export class ComposerController {
     const provider = this.findProvider(nextState);
     const select = createSelect(provider?.modes ?? [], this.mode);
     select.dataset.testid = "paseo-composer-mode";
+    select.title = "思考强度";
     select.addEventListener("change", () => {
       this.modeTouched = true;
       this.mode = select.value;
@@ -213,9 +237,6 @@ export class ComposerController {
     menu.append(
       this.menuCheckbox("包含 IDE 背景信息", this.includeIdeContext, "paseo-toggle-ide-context", (checked) => {
         this.includeIdeContext = checked;
-      }),
-      this.menuCheckbox("计划模式", this.planMode, "paseo-toggle-plan-mode", (checked) => {
-        this.planMode = checked;
       }),
       el("button", "menu-item disabled", "添加当前文件/选区"),
     );
@@ -368,4 +389,12 @@ export class ComposerController {
     const entry = nextState.providers.find((candidate) => candidate.provider === provider);
     return entry?.defaultModeId ?? entry?.modes.find((mode) => mode.isDefault)?.id ?? "";
   }
+}
+
+/**
+ * 构造 composer provider 选择入口的选项。
+ * @param providers provider 列表。
+ */
+export function buildComposerProviderPickerOptions(providers: ProviderView[]): SelectOptionView[] {
+  return providers.map((provider) => ({ id: provider.provider, label: provider.label, isDefault: false }));
 }

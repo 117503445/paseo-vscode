@@ -103,28 +103,8 @@ export const WEBVIEW_STYLES = /* css */ `
   }
   .task-view {
     display: grid;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: 1fr;
     min-height: 0;
-  }
-  .filters {
-    display: grid;
-    gap: 8px;
-    padding: 8px 10px;
-    border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, transparent);
-  }
-  .segmented {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 4px;
-  }
-  .segmented button {
-    color: var(--vscode-foreground);
-    background: transparent;
-    border-color: var(--vscode-input-border, transparent);
-  }
-  .segmented button.active {
-    background: var(--vscode-list-activeSelectionBackground);
-    color: var(--vscode-list-activeSelectionForeground);
   }
   .task-list, .timeline {
     overflow: auto;
@@ -185,9 +165,48 @@ export const WEBVIEW_STYLES = /* css */ `
     overflow-wrap: anywhere;
   }
   .message-text {
-    white-space: pre-wrap;
     overflow-wrap: anywhere;
     line-height: 1.5;
+  }
+  .markdown-body p {
+    margin: 0 0 8px;
+  }
+  .markdown-body p:last-child,
+  .markdown-body ul:last-child,
+  .markdown-body ol:last-child,
+  .markdown-body pre:last-child {
+    margin-bottom: 0;
+  }
+  .markdown-body ul,
+  .markdown-body ol {
+    margin: 0 0 8px;
+    padding-left: 20px;
+  }
+  .markdown-body li {
+    margin: 2px 0;
+  }
+  .markdown-body code {
+    border-radius: 4px;
+    padding: 1px 4px;
+    background: var(--vscode-textCodeBlock-background, var(--vscode-editorWidget-background));
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 12px;
+  }
+  .markdown-body pre {
+    margin: 0 0 8px;
+    overflow: auto;
+    border-radius: 6px;
+    padding: 8px 10px;
+    background: var(--vscode-textCodeBlock-background, var(--vscode-editorWidget-background));
+  }
+  .markdown-body pre code {
+    display: block;
+    padding: 0;
+    background: transparent;
+    white-space: pre;
+  }
+  .markdown-body a {
+    color: var(--vscode-textLink-foreground);
   }
   .message-actions {
     display: flex;
@@ -227,20 +246,67 @@ export const WEBVIEW_STYLES = /* css */ `
   .composer {
     position: relative;
     display: grid;
-    gap: 8px;
     padding: 10px;
     border-top: 1px solid var(--vscode-sideBarSectionHeader-border, transparent);
   }
-  .composer-controls {
+  .composer-panel {
     display: grid;
-    grid-template-columns: auto minmax(54px, 1fr) minmax(54px, 1fr) minmax(54px, 1fr) auto;
-    gap: 6px;
+    gap: 8px;
+    border: 1px solid var(--vscode-input-border, transparent);
+    border-radius: 18px;
+    padding: 8px;
+    background: var(--vscode-input-background);
+  }
+  .composer-input {
+    min-height: 92px;
+    max-height: 220px;
+    border: 0;
+    padding: 4px 6px;
+    resize: vertical;
+    background: transparent;
+    outline: none;
+  }
+  .composer-controls {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
     align-items: center;
+  }
+  .composer-left-controls,
+  .composer-right-controls {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+  }
+  .composer-right-controls {
+    flex: 1;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+  .composer-controls select {
+    width: auto;
+    min-width: 70px;
+    max-width: 128px;
+    height: 28px;
+    border-radius: 999px;
+    background: var(--vscode-dropdown-background, var(--vscode-input-background));
+  }
+  .composer-pill {
+    min-width: 40px;
+    border-radius: 999px;
+    color: var(--vscode-foreground);
+    background: transparent;
+    border-color: var(--vscode-input-border, transparent);
+  }
+  .composer-pill.active {
+    color: var(--vscode-button-foreground);
+    background: var(--vscode-button-background);
   }
   .composer-menu {
     position: absolute;
     left: 10px;
-    bottom: calc(100% - 6px);
+    bottom: calc(100% - 4px);
     z-index: 2;
     min-width: 190px;
     padding: 6px;
