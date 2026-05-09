@@ -143,8 +143,7 @@ export const WEBVIEW_STYLES = /* css */ `
   .topbar-tools {
     grid-column: 2;
   }
-  .icon-button,
-  .count-button {
+  .icon-button {
     flex: 0 0 auto;
     color: var(--vscode-foreground);
     background: transparent;
@@ -167,21 +166,6 @@ export const WEBVIEW_STYLES = /* css */ `
   }
   .paseo-icon path {
     vector-effect: non-scaling-stroke;
-  }
-  .count-button {
-    width: auto;
-    min-width: 62px;
-    max-width: 116px;
-    height: 28px;
-    padding: 0 8px;
-    overflow: hidden;
-    border-color: var(--paseo-border);
-    border-radius: 999px;
-    color: var(--vscode-descriptionForeground);
-    background: var(--paseo-subtle-bg);
-    font-size: 11px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   .status-line {
     grid-column: 1 / -1;

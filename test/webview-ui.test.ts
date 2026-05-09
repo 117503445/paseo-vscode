@@ -4,6 +4,7 @@ import { buildComposerProviderPickerOptions } from "../src/webview/composer";
 import { buildSelectDisplayOptions, iconButton, type PaseoIconName } from "../src/webview/dom";
 import { renderMarkdownToHtml } from "../src/webview/markdown";
 import { formatAgentRuntimeLabel, listVisibleTasks } from "../src/webview/tasks";
+import { renderTopTools } from "../src/webview/topbar";
 
 const baseAgent: AgentView = {
   id: "agent-base",
@@ -131,6 +132,23 @@ function withFakeDocument(run: () => void): void {
   }
 }
 
+/**
+ * 收集假元素树中的可见文本。
+ * @param node 假元素根节点。
+ */
+function collectFakeText(node: FakeElementNode): string {
+  return [node.textContent, ...node.children.map(collectFakeText)].join("");
+}
+
+/**
+ * 判断假元素树中是否存在指定 testid。
+ * @param node 假元素根节点。
+ * @param testid 目标 testid。
+ */
+function hasFakeTestId(node: FakeElementNode, testid: string): boolean {
+  return node.dataset.testid === testid || node.children.some((child) => hasFakeTestId(child, testid));
+}
+
 describe("webview user visible ui", () => {
   test("task list always shows every task without search or status filtering", () => {
     const agents: AgentView[] = [
@@ -199,6 +217,24 @@ describe("webview user visible ui", () => {
     expect(label).toBe("codex · idle");
     expect(label).not.toContain(" - ");
     expect(label).not.toBe("-");
+  });
+
+  test("topbar does not render running count badge when no task is running", () => {
+    withFakeDocument(() => {
+      const target = renderTopTools({ ...baseState, runningCount: 0 }, () => undefined) as unknown as FakeElementNode;
+
+      expect(collectFakeText(target)).not.toContain("正在进行中");
+      expect(hasFakeTestId(target, "paseo-running-count")).toBe(false);
+    });
+  });
+
+  test("topbar does not render running count badge when tasks are running", () => {
+    withFakeDocument(() => {
+      const target = renderTopTools({ ...baseState, runningCount: 2 }, () => undefined) as unknown as FakeElementNode;
+
+      expect(collectFakeText(target)).not.toContain("正在进行中");
+      expect(hasFakeTestId(target, "paseo-running-count")).toBe(false);
+    });
   });
 
   test("codex style icon buttons expose title and aria label", () => {

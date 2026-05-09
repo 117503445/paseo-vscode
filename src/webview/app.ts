@@ -3,6 +3,7 @@ import { ComposerController } from "./composer";
 import { button, el, iconButton, statusLabel, type PostMessage } from "./dom";
 import { renderTasks } from "./tasks";
 import { renderThread } from "./thread";
+import { renderTopTools } from "./topbar";
 
 declare const acquireVsCodeApi: () => {
   /**
@@ -48,9 +49,9 @@ function renderHeader(nextState: PaseoViewState): HTMLElement {
     back.dataset.testid = "paseo-back-to-tasks";
     const title = button(nextState.selectedAgent.title, "当前任务", () => undefined);
     title.className = "title-button";
-    section.append(back, title, renderTopTools(nextState));
+    section.append(back, title, renderTopTools(nextState, post));
   } else {
-    section.append(el("div", "title", "任务"), renderTopTools(nextState));
+    section.append(el("div", "title", "任务"), renderTopTools(nextState, post));
   }
 
   const meta = el("div", "status-line");
@@ -68,42 +69,6 @@ function renderHeader(nextState: PaseoViewState): HTMLElement {
     section.append(error);
   }
   return section;
-}
-
-/**
- * 渲染顶部计数与操作按钮组。
- * @param nextState 当前视图状态。
- */
-function renderTopTools(nextState: PaseoViewState): HTMLElement {
-  const tools = el("div", "topbar-tools");
-  tools.append(renderRunningCount(nextState), renderTopActions());
-  return tools;
-}
-
-/**
- * 渲染顶部运行中计数。
- * @param nextState 当前视图状态。
- */
-function renderRunningCount(nextState: PaseoViewState): HTMLElement {
-  const target = button(`${nextState.runningCount} 正在进行中`, "运行中的任务", () =>
-    post({ type: "setTaskFilter", filter: "running" }),
-  );
-  target.className = "count-button";
-  target.dataset.testid = "paseo-running-count";
-  return target;
-}
-
-/**
- * 渲染顶部操作。
- */
-function renderTopActions(): HTMLElement {
-  const actions = el("div", "top-actions");
-  actions.append(
-    iconButton("refresh", "刷新", () => post({ type: "refresh" })),
-    iconButton("settings", "设置", () => post({ type: "openSettings" })),
-    iconButton("new-task", "新任务", () => post({ type: "backToTasks" })),
-  );
-  return actions;
 }
 
 /**

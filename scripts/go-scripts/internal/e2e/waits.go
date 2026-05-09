@@ -87,6 +87,22 @@ func expectLocatorCountAtMost(locator playwright.Locator, maximum int, timeout t
 	return fmt.Errorf("等待元素数量不超过 %d 超时，最后数量：%d", maximum, lastCount)
 }
 
+// waitSelectedAgentIdle 等待当前任务恢复为可发送状态。
+// frame 是 Paseo webview frame。
+// timeout 是等待超时时间。
+func waitSelectedAgentIdle(frame playwright.Frame, timeout time.Duration) error {
+	return frame.Locator(`[data-testid="paseo-composer-send"]`).WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(float64(timeout.Milliseconds())),
+	})
+}
+
+// expectRunningCountHidden 断言运行中数量徽标不存在。
+// frame 是 Paseo webview frame。
+// timeout 是等待超时时间。
+func expectRunningCountHidden(frame playwright.Frame, timeout time.Duration) error {
+	return expectLocatorCountAtMost(frame.Locator(`[data-testid="paseo-running-count"]`), 0, timeout)
+}
+
 // expectSelectValue 等待 select 元素选中指定值。
 // locator 是 select 元素。
 // expected 是期望选中值。

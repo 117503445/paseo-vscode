@@ -71,6 +71,15 @@ func runCase(ctx context.Context, page playwright.Page, baseURL string, name str
 			return err
 		}
 		return expectCodexLikeUX(frame)
+	case "running-count-hidden":
+		frame, err := openPaseoView(page)
+		if err != nil {
+			return err
+		}
+		if err := expectText(frame.Locator(`[data-testid="paseo-daemon-status"]`), "已连接", 60*time.Second); err != nil {
+			return err
+		}
+		return expectRunningCountHiddenInZeroAndRunningStates(frame)
 	case "timeline-stream-coalescing":
 		frame, err := openPaseoView(page)
 		if err != nil {
@@ -179,6 +188,46 @@ func createMockChat(frame playwright.Frame) error {
 	return waitLocatorCountAtLeast(frame.Locator(`[data-testid="paseo-message-user"]`), 2, 30*time.Second)
 }
 
+// expectRunningCountHiddenInZeroAndRunningStates 断言空闲和运行中都不展示运行中数量徽标。
+// frame 是 Paseo webview frame。
+func expectRunningCountHiddenInZeroAndRunningStates(frame playwright.Frame) error {
+	if err := expectRunningCountHidden(frame, 5*time.Second); err != nil {
+		return err
+	}
+	if err := selectOptionWhenAvailable(frame.Locator(`[data-testid="paseo-composer-provider"]`), "mock", 30*time.Second); err != nil {
+		return err
+	}
+	if err := selectOptionWhenAvailable(frame.Locator(`[data-testid="paseo-composer-model"]`), "ten-second-stream", 30*time.Second); err != nil {
+		return err
+	}
+	if err := selectOptionWhenAvailable(frame.Locator(`[data-testid="paseo-composer-mode"]`), "load-test", 30*time.Second); err != nil {
+		return err
+	}
+	if err := frame.Locator(`[data-testid="paseo-composer-input"]`).Fill("验证运行中数量徽标不展示"); err != nil {
+		return err
+	}
+	if err := frame.Locator(`[data-testid="paseo-composer-send"]`).Click(); err != nil {
+		return err
+	}
+	if err := frame.Locator(`[data-testid="paseo-thread-view"]`).WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(60_000),
+	}); err != nil {
+		return err
+	}
+	if err := frame.Locator(`[data-testid="paseo-composer-stop"]`).WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(30_000),
+	}); err != nil {
+		return err
+	}
+	if err := expectRunningCountHidden(frame, 5*time.Second); err != nil {
+		return err
+	}
+	if err := waitSelectedAgentIdle(frame, 90*time.Second); err != nil {
+		return err
+	}
+	return expectRunningCountHidden(frame, 5*time.Second)
+}
+
 // expectTimelineStreamCoalescing 断言流式输出不会按 token 拆成多条消息。
 // frame 是 Paseo webview frame。
 func expectTimelineStreamCoalescing(frame playwright.Frame) error {
@@ -207,7 +256,10 @@ func expectTimelineStreamCoalescing(frame playwright.Frame) error {
 	}); err != nil {
 		return err
 	}
-	if err := expectText(frame.Locator(`[data-testid="paseo-running-count"]`), "0 正在进行中", 90*time.Second); err != nil {
+	if err := waitSelectedAgentIdle(frame, 90*time.Second); err != nil {
+		return err
+	}
+	if err := expectRunningCountHidden(frame, 5*time.Second); err != nil {
 		return err
 	}
 	if err := expectLocatorCountAtMost(frame.Locator(`[data-testid="paseo-message-assistant"]`), 2, 5*time.Second); err != nil {
@@ -276,7 +328,10 @@ func expectToolCallReadableDetails(frame playwright.Frame) error {
 	}); err != nil {
 		return err
 	}
-	if err := expectText(frame.Locator(`[data-testid="paseo-running-count"]`), "0 正在进行中", 90*time.Second); err != nil {
+	if err := waitSelectedAgentIdle(frame, 90*time.Second); err != nil {
+		return err
+	}
+	if err := expectRunningCountHidden(frame, 5*time.Second); err != nil {
 		return err
 	}
 	if err := expectDetailsOpen(shellTool, false); err != nil {
@@ -525,7 +580,10 @@ func stopSelectedAgentIfRunning(frame playwright.Frame) error {
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	return expectText(frame.Locator(`[data-testid="paseo-running-count"]`), "0 正在进行中", 30*time.Second)
+	if err := waitSelectedAgentIdle(frame, 30*time.Second); err != nil {
+		return err
+	}
+	return expectRunningCountHidden(frame, 5*time.Second)
 }
 
 // expectCodexLikeUX 断言 Paseo 具备 Codex 风格任务交互。
@@ -536,7 +594,7 @@ func expectCodexLikeUX(frame playwright.Frame) error {
 	}); err != nil {
 		return err
 	}
-	if err := expectText(frame.Locator(`[data-testid="paseo-running-count"]`), "0 正在进行中", 30*time.Second); err != nil {
+	if err := expectRunningCountHidden(frame, 5*time.Second); err != nil {
 		return err
 	}
 	searchCount, err := frame.Locator(`[data-testid="paseo-task-search"]`).Count()
@@ -649,6 +707,9 @@ func expectCodexLikeUX(frame playwright.Frame) error {
 	}); err != nil {
 		return err
 	}
+	if err := expectRunningCountHidden(frame, 5*time.Second); err != nil {
+		return err
+	}
 	if err := frame.Locator(`[data-testid="paseo-message-assistant"]`).First().WaitFor(playwright.LocatorWaitForOptions{
 		Timeout: playwright.Float(60_000),
 	}); err != nil {
@@ -689,9 +750,6 @@ func expectCodexLikeVisualChrome(frame playwright.Frame) error {
 		if err := expectControlVisible(frame.Locator(control.selector), control.label, control.requireEnabled); err != nil {
 			return err
 		}
-	}
-	if err := expectElementBox(frame.Locator(`[data-testid="paseo-running-count"]`), "运行中计数", 62, 36); err != nil {
-		return err
 	}
 	return expectBorderRadiusAtLeast(frame.Locator(`.composer-panel`).First(), "composer 面板", 14)
 }
