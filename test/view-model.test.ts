@@ -55,6 +55,77 @@ describe("timeline view model", () => {
     expect(completed[0]).toMatchObject({ type: "tool", callId: "tool-1", status: "completed" });
   });
 
+  test("formats tool call titles and expandable details", () => {
+    const timeline = reduceTimelineEntries([
+      {
+        item: {
+          type: "tool_call",
+          callId: "shell-1",
+          name: "exec_command",
+          status: "completed",
+          detail: {
+            type: "shell",
+            command: "npm test -- --run",
+            cwd: "/workspace/project/paseo-vscode",
+            output: "✓ test/view-model.test.ts",
+            exitCode: 0,
+          },
+          error: null,
+        },
+      },
+      {
+        item: {
+          type: "tool_call",
+          callId: "read-1",
+          name: "read_file",
+          status: "completed",
+          detail: {
+            type: "read",
+            filePath: "/workspace/project/paseo-vscode/src/paseo/view-model.ts",
+            content: "export function mapTimelineEntry() {}",
+          },
+          error: null,
+        },
+      },
+      {
+        item: {
+          type: "tool_call",
+          callId: "search-1",
+          name: "web_search",
+          status: "completed",
+          detail: {
+            type: "search",
+            query: "paseo tool call",
+            toolName: "web_search",
+            webResults: [{ title: "Paseo", url: "https://example.com/paseo" }],
+          },
+          error: null,
+        },
+      },
+    ]);
+
+    expect(timeline).toHaveLength(3);
+    expect(timeline[0]).toMatchObject({
+      type: "tool",
+      title: "Shell · npm test -- --run",
+      text: expect.stringContaining("输出\n✓ test/view-model.test.ts"),
+      collapsible: true,
+    });
+    expect(timeline[0]?.text).toContain("退出码\n0");
+    expect(timeline[1]).toMatchObject({
+      type: "tool",
+      title: "Read · /workspace/project/paseo-vscode/src/paseo/view-model.ts",
+      text: expect.stringContaining("内容\nexport function mapTimelineEntry() {}"),
+      collapsible: true,
+    });
+    expect(timeline[2]).toMatchObject({
+      type: "tool",
+      title: "Web Search · paseo tool call",
+      text: expect.stringContaining("结果\nPaseo https://example.com/paseo"),
+      collapsible: true,
+    });
+  });
+
   test("ignores non-timeline stream lifecycle events", () => {
     const timeline = appendTimelineStreamEvent([], {
       type: "turn_started",

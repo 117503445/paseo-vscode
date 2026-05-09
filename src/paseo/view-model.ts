@@ -1,4 +1,5 @@
 import type { AgentView, ProviderView, TimelineItemView } from "./types";
+import { formatToolCallText, formatToolCallTitle } from "./tool-call-view";
 
 export interface AgentSnapshotLike {
   /** agent ID。 */
@@ -164,7 +165,7 @@ export function mapTimelineEntry(
       ...base,
       id,
       type: "tool",
-      title: readString(record.name) || "工具调用",
+      title: formatToolCallTitle(record),
       text: formatToolCallText(record),
       status: readString(record.status),
       callId: readString(record.callId) || undefined,
@@ -300,17 +301,6 @@ function upsertTodoItem(timeline: TimelineItemView[], item: TimelineItemView): T
     return [...timeline.slice(0, -1), { ...last, ...item, id: last.id }];
   }
   return [...timeline, item];
-}
-
-/**
- * 格式化工具调用摘要。
- * @param record 工具调用原始记录。
- */
-function formatToolCallText(record: Record<string, unknown>): string {
-  const name = readString(record.name) || "tool";
-  const status = readString(record.status);
-  const error = record.error === null || record.error === undefined ? "" : `\n${JSON.stringify(record.error)}`;
-  return `${name}${status ? ` ${status}` : ""}${error}`.trim();
 }
 
 /**

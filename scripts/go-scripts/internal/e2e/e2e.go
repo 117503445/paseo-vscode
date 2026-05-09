@@ -15,7 +15,7 @@ type Config struct {
 	ProjectRoot  string
 }
 
-var allCases = []string{"command-new-agent-cold-start", "offline-daemon-start", "default-ready-provider", "composer-preserves-draft-on-error", "command-new-agent-default-provider", "codex-like-ux", "mock-chat", "timeline-stream-coalescing", "reload-reconnect", "no-folder"}
+var allCases = []string{"command-new-agent-cold-start", "offline-daemon-start", "default-ready-provider", "composer-preserves-draft-on-error", "command-new-agent-default-provider", "codex-like-ux", "mock-chat", "timeline-stream-coalescing", "tool-call-readable-details", "reload-reconnect", "no-folder"}
 
 // Run 执行 E2E 命令。
 // args 是 e2e 子命令参数。

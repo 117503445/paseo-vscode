@@ -80,6 +80,15 @@ func runCase(ctx context.Context, page playwright.Page, baseURL string, name str
 			return err
 		}
 		return expectTimelineStreamCoalescing(frame)
+	case "tool-call-readable-details":
+		frame, err := openPaseoView(page)
+		if err != nil {
+			return err
+		}
+		if err := expectText(frame.Locator(`[data-testid="paseo-daemon-status"]`), "已连接", 60*time.Second); err != nil {
+			return err
+		}
+		return expectToolCallReadableDetails(frame)
 	case "reload-reconnect":
 		if _, err := page.Goto(baseURL); err != nil {
 			return err
@@ -213,6 +222,89 @@ func expectTimelineStreamCoalescing(frame playwright.Frame) error {
 	}
 	if strings.Contains(timelineText, "turn_started") || strings.Contains(timelineText, "turn_completed") {
 		return fmt.Errorf("timeline 不应显示生命周期事件，实际文本：%q", timelineText)
+	}
+	return nil
+}
+
+// expectToolCallReadableDetails 断言工具调用标题可读且详情可展开。
+// frame 是 Paseo webview frame。
+func expectToolCallReadableDetails(frame playwright.Frame) error {
+	if err := selectOptionWhenAvailable(frame.Locator(`[data-testid="paseo-composer-provider"]`), "mock", 30*time.Second); err != nil {
+		return err
+	}
+	if err := selectOptionWhenAvailable(frame.Locator(`[data-testid="paseo-composer-model"]`), "ten-second-stream", 30*time.Second); err != nil {
+		return err
+	}
+	if err := selectOptionWhenAvailable(frame.Locator(`[data-testid="paseo-composer-mode"]`), "load-test", 30*time.Second); err != nil {
+		return err
+	}
+	if err := frame.Locator(`[data-testid="paseo-composer-input"]`).Fill("请生成工具调用详情用于测试"); err != nil {
+		return err
+	}
+	if err := frame.Locator(`[data-testid="paseo-composer-send"]`).Click(); err != nil {
+		return err
+	}
+	if err := frame.Locator(`[data-testid="paseo-thread-view"]`).WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(60_000),
+	}); err != nil {
+		return err
+	}
+	readTool := frame.Locator(`details[data-testid="paseo-processing-group"]:has-text("Read · packages/app/src/components/conversation-list.tsx")`).First()
+	if err := readTool.WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(60_000),
+	}); err != nil {
+		return err
+	}
+	if err := expectText(readTool, "内容", 5*time.Second); err != nil {
+		return err
+	}
+	searchTool := frame.Locator(`details[data-testid="paseo-processing-group"]:has-text("Search · scrollToEnd")`).First()
+	if err := searchTool.WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(60_000),
+	}); err != nil {
+		return err
+	}
+	if err := expectText(searchTool, "文件", 5*time.Second); err != nil {
+		return err
+	}
+	shellTool := frame.Locator(`details[data-testid="paseo-processing-group"]:has-text("Shell · node scripts/simulate-stream-burst.mjs")`).First()
+	if err := shellTool.WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(90_000),
+	}); err != nil {
+		return err
+	}
+	if err := expectDetailsOpen(shellTool, false); err != nil {
+		return err
+	}
+	if err := shellTool.Locator("summary").Click(); err != nil {
+		return err
+	}
+	if err := expectDetailsOpen(shellTool, true); err != nil {
+		return err
+	}
+	if err := expectText(shellTool, "输出", 5*time.Second); err != nil {
+		return err
+	}
+	if err := expectText(shellTool, "[burst] tick 1 userIsAtBottom=true", 5*time.Second); err != nil {
+		return err
+	}
+	return stopSelectedAgentIfRunning(frame)
+}
+
+// expectDetailsOpen 断言 details 元素展开状态。
+// locator 是 details 元素。
+// expected 是期望的展开状态。
+func expectDetailsOpen(locator playwright.Locator, expected bool) error {
+	value, err := locator.Evaluate(`element => element.open`, nil)
+	if err != nil {
+		return err
+	}
+	open, ok := value.(bool)
+	if !ok {
+		return fmt.Errorf("details open 状态不是布尔值：%v", value)
+	}
+	if open != expected {
+		return fmt.Errorf("details open 状态为 %v，期望 %v", open, expected)
 	}
 	return nil
 }
